@@ -692,9 +692,25 @@ def process_folders(pred_folder, gt_folder, main_folder, metrics_data, metrics_e
                 results_downsampled = evaluate_hausdorff_downsampled(pred_path, gt_path, scale_factor, downsampled_original_image_AVG,pred_file)
 
                 
-                # Upscale masks to original dimensions
+                # Upscale masks to original dimensions.
+                # The predicted LV mask was produced in the *predicted* crop frame,
+                # so it is correctly un-cropped with the predicted crop box (crop_mask_path).
                 original_pred_mask = upscale_segmentation_to_original(pred_mask, crop_mask_path)
-                original_gt_mask = upscale_segmentation_to_original(gt_mask, crop_mask_path)
+
+                # BUGFIX (crop misalignment): the GT LV mask was annotated in the
+                # *ground-truth* crop frame. Un-cropping it with the predicted crop box
+                # re-projects it through the wrong square, shifting GT relative to pred by
+                # the predicted-vs-GT crop offset and underreporting Dice. Use the GT square
+                # crop box instead. In interreader mode crop_mask_path is ALREADY the GT crop
+                # (both inputs are expert masks in the GT frame), so keep it there.
+                if interreaderName is not None:
+                    gt_crop_mask_path = crop_mask_path
+                else:
+                    gt_crop_mask_path = os.path.join(
+                        main_folder, parts[0], volunteer_id, 'Distortion_Corrected', divo_folder,
+                        '02_Crop_Masks', f'Square_Crop_Mask_Slice_{slice_number}.nii'
+                    )
+                original_gt_mask = upscale_segmentation_to_original(gt_mask, gt_crop_mask_path)
 
                 # Save original masks (optional)
                 original_pred_path = os.path.join(main_folder, parts[0], volunteer_id, 'Distortion_Corrected', divo_folder,
