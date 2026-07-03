@@ -181,27 +181,27 @@ def histogram_comparison(gt_mask, pred_mask, original_image, label=1):
     gt_median_intensity = np.median(gt_intensities)
     pred_median_intensity = np.median(pred_intensities)
 
-    # Create histogram plot
-    plt.figure()
-    plt.hist(gt_intensities.ravel(), bins=50, alpha=0.5, color='blue', label='Ground Truth')
-    plt.hist(pred_intensities.ravel(), bins=50, alpha=0.5, color='red', label='Prediction')
+    # # Create histogram plot
+    # plt.figure()
+    # plt.hist(gt_intensities.ravel(), bins=50, alpha=0.5, color='blue', label='Ground Truth')
+    # plt.hist(pred_intensities.ravel(), bins=50, alpha=0.5, color='red', label='Prediction')
 
-    # Highlight the median values
-    plt.axvline(gt_median_intensity, color='blue', linestyle='dashed', linewidth=1.5, label=f'GT Median: {gt_median_intensity:.2f}')
-    plt.axvline(pred_median_intensity, color='red', linestyle='dashed', linewidth=1.5, label=f'Pred Median: {pred_median_intensity:.2f}')
+    # # Highlight the median values
+    # plt.axvline(gt_median_intensity, color='blue', linestyle='dashed', linewidth=1.5, label=f'GT Median: {gt_median_intensity:.2f}')
+    # plt.axvline(pred_median_intensity, color='red', linestyle='dashed', linewidth=1.5, label=f'Pred Median: {pred_median_intensity:.2f}')
 
-    # Add annotations for median values
-    plt.text(gt_median_intensity, plt.ylim()[1] * 0.9, f'{gt_median_intensity:.2f}', color='blue', ha='center')
-    plt.text(pred_median_intensity, plt.ylim()[1] * 0.9, f'{pred_median_intensity:.2f}', color='red', ha='center')
+    # # Add annotations for median values
+    # plt.text(gt_median_intensity, plt.ylim()[1] * 0.9, f'{gt_median_intensity:.2f}', color='blue', ha='center')
+    # plt.text(pred_median_intensity, plt.ylim()[1] * 0.9, f'{pred_median_intensity:.2f}', color='red', ha='center')
 
-    # Set legend, title, labels
-    plt.legend()
-    plt.title(f'Intensity Histogram Comparison for Label {label}')
-    plt.xlabel('Intensity')
-    plt.ylabel('Frequency')
+    # # Set legend, title, labels
+    # plt.legend()
+    # plt.title(f'Intensity Histogram Comparison for Label {label}')
+    # plt.xlabel('Intensity')
+    # plt.ylabel('Frequency')
 
-    # Show plot
-    plt.show()
+    # # Show plot
+    # plt.show()
 
     
     
@@ -234,7 +234,7 @@ def histogram_comparison(gt_mask, pred_mask, original_image, label=1):
 
     
 
-    ####TOODOO!!
+    ####TODO!!
     return gt_median_intensity, pred_median_intensity,median_percentage_difference, 
 
 
@@ -364,7 +364,7 @@ def evaluate_hausdorff_original(original_pred_mask, original_gt_mask, original_i
 
 
     # Plot original image with original masks and Hausdorff distance for validation
-    plot_original_with_masks(original_image, original_pred_mask, original_gt_mask, scale_factor=1.0, filename=filename)
+    #plot_original_with_masks(original_image, original_pred_mask, original_gt_mask, scale_factor=1.0, filename=filename)
     
     return {
         "Hausdorff_2 (pixels/mm)": hausdorff_2_pixels,
@@ -419,7 +419,7 @@ def plot_original_with_masks(original_image, upscaled_pred_mask, upscaled_gt_mas
     gt_cmap = ListedColormap(gt_colors)
 
     # Plot original image
-    plt.figure(figsize=(10, 10))
+    fig_main = plt.figure(figsize=(10, 10))
     plt.imshow(original_image, cmap='gray')
 
     # Overlay ground truth mask
@@ -473,8 +473,11 @@ def plot_original_with_masks(original_image, upscaled_pred_mask, upscaled_gt_mas
     legend = ax_legend.legend(handles=all_handles, loc='center', frameon=False)
 
     # Adjust layout and show the legend figure
-    plt.tight_layout()
+    #plt.tight_layout()
+
+    fig_main.savefig(f'/home/sastocke/nnUNet/OriginalScores/{filename[:-7]}.png', dpi=300)
     plt.show()
+
 
 def evaluate_hausdorff_and_plot(pred_mask, gt_mask, original_image, scale_factor, filename):
     # Calculate center points for labels in upscaled masks
@@ -508,53 +511,57 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.colors import ListedColormap
 
-def plot_masks_and_hausdorff(original_image, pred_mask, gt_mask, pred_center_2, gt_center_2, pred_center_3, gt_center_3, filename):
-    #plt.figure(figsize=(8, 8))
-    #plt.title(f"Overlay of Downsampled Original Image and Masks: {filename}")
-    
+import matplotlib.pyplot as plt
+from matplotlib.colors import ListedColormap
+
+def plot_masks_and_hausdorff(original_image, pred_mask, gt_mask,
+                              pred_center_2, gt_center_2,
+                              pred_center_3, gt_center_3,
+                              filename):
+    # Create figure and axes
+    fig_main, ax = plt.subplots(figsize=(8, 8))
+
     # Display the original image
-    plt.imshow(original_image, cmap='gray')
-    plt.show()
-    plt.imshow(original_image, cmap='gray')
-    
+    ax.imshow(original_image, cmap='gray')
+
     # Define custom colormaps for prediction and ground truth masks
-    # Prediction mask colormap: [Background, LV, Label 2, Label 3]
     pred_colors = [
-        (0, 0, 0, 0),          # 0 - Transparent
-         (0, 1, 1, 0.5),       # 1 - Cyan   
-        (0, 0, 1, 0.5),        # 2 - Blue (Label 2)
-        (0, 0, 1, 0.5),        # 3 - Blue (Label 3)
+        (0, 0, 0, 0),       # 0 - Transparent
+        (0, 1, 1, 0.5),     # 1 - Cyan   
+        (0, 0, 1, 0.5),     # 2 - Blue (Label 2)
+        (0, 0, 1, 0.5),     # 3 - Blue (Label 3)
     ]
     pred_cmap = ListedColormap(pred_colors)
-    
-    # Ground truth mask colormap: [Background, LV, Label 2, Label 3]
+
     gt_colors = [
-        (0, 0, 0, 0),          # 0 - Transparent
-        (1, 1, 0, 0.5),         # 1 - Yellow
-        (1, 0, 0, 0.5),        # 2 - Red (Label 2)
-        (1, 0, 0, 0.5)         # 3 - Red (Label 3)
+        (0, 0, 0, 0),       # 0 - Transparent
+        (1, 1, 0, 0.5),     # 1 - Yellow
+        (1, 0, 0, 0.5),     # 2 - Red (Label 2)
+        (1, 0, 0, 0.5)      # 3 - Red (Label 3)
     ]
     gt_cmap = ListedColormap(gt_colors)
-    
-    # # Overlay ground truth mask
-    plt.imshow(gt_mask, cmap=gt_cmap, interpolation='none',label = 'GT LV Mask' )
-    
-    # Overlay prediction mask
-    plt.imshow(pred_mask, cmap=pred_cmap, interpolation='none',label = 'Pred LV Mask')
-    
+
+    # Overlay ground truth and prediction masks
+    ax.imshow(gt_mask, cmap=gt_cmap, interpolation='none')
+    ax.imshow(pred_mask, cmap=pred_cmap, interpolation='none')
+
     # Plot center points and Hausdorff lines for label 2
-    plt.scatter(*pred_center_2[::-1], color='blue', label='Prediction Center 2', marker='x', s=100)
-    plt.scatter(*gt_center_2[::-1], color='red', label='Ground Truth Center 2', marker='+', s=100)
-    plt.plot([pred_center_2[1], gt_center_2[1]], [pred_center_2[0], gt_center_2[0]], 'b--', label='Hausdorff Distance 2')
-    
+    ax.scatter(*pred_center_2[::-1], color='blue', marker='x', s=100, label='Prediction Center 2')
+    ax.scatter(*gt_center_2[::-1], color='red', marker='+', s=100, label='Ground Truth Center 2')
+    ax.plot([pred_center_2[1], gt_center_2[1]], [pred_center_2[0], gt_center_2[0]], 'b--', label='Hausdorff Distance 2')
+
     # Plot center points and Hausdorff lines for label 3
-    plt.scatter(*pred_center_3[::-1], color='blue', label='Prediction Center 3', marker='x', s=100)
-    plt.scatter(*gt_center_3[::-1], color='red', label='Ground Truth Center 3', marker='+', s=100)
-    plt.plot([pred_center_3[1], gt_center_3[1]], [pred_center_3[0], gt_center_3[0]], 'm--', label='Hausdorff Distance 3')
-    
-    #plt.legend(loc='upper right')
-    plt.axis('off')
-    plt.show()
+    ax.scatter(*pred_center_3[::-1], color='blue', marker='x', s=100, label='Prediction Center 3')
+    ax.scatter(*gt_center_3[::-1], color='red', marker='+', s=100, label='Ground Truth Center 3')
+    ax.plot([pred_center_3[1], gt_center_3[1]], [pred_center_3[0], gt_center_3[0]], 'm--', label='Hausdorff Distance 3')
+
+    ax.axis('off')
+
+    # Save the final figure (make sure to use bbox_inches='tight' to avoid cropping)
+    out_path = f'/home/sastocke/nnUNet/OriginalScores/Upsampled{filename[:-7]}.png'
+    fig_main.savefig(out_path, dpi=300, bbox_inches='tight')
+    plt.close(fig_main)
+
 
 
 
@@ -656,6 +663,12 @@ def process_folders(pred_folder, gt_folder, main_folder, metrics_data, metrics_e
                 parts[0], volunteer_id, 'Distortion_Corrected', divo_folder, 
                 '03_Segmentation_Images', 'Fractional_Anisotropy_Image_Slice_' + slice_name
             )
+            original_image_path_AVG = os.path.join(
+                main_folder,
+                parts[0], volunteer_id, 'Distortion_Corrected', divo_folder, 
+                '03_Segmentation_Images', 'Average_Diffusion_Weighted_Image_Slice_' + slice_name
+            )
+
 
             print(f'original_image_path: {original_image_path_MD}')
             crop_mask_filename = f"{annotator}_{volunteer_id}_{divo_folder}_slice_{slice_number}.nii.gz"
@@ -671,11 +684,14 @@ def process_folders(pred_folder, gt_folder, main_folder, metrics_data, metrics_e
                 parts[0], volunteer_id, 'Distortion_Corrected', divo_folder,
                 '05_Segmentation_Images_CI', 'Cropped_Average_Diffusion_Weighted_Image_Slice_' + slice_name
             )
-            #print(f'original image_path = {original_image_path}, crop mask path: {crop_mask_path}')
-            if os.path.exists(original_image_path_MD) and os.path.exists(crop_mask_path):
+            print(f'original image_path = {original_image_path_MD}, crop mask path: {crop_mask_path}')
+            if os.path.exists(original_image_path_MD) and os.path.exists(crop_mask_path) and os.path.exists(original_image_path_AVG):
+                print(f'AVG path: original image_path = {original_image_path_AVG}, crop mask path: {crop_mask_path}')
+
                 # Load the original image
                 original_image_MD, original_affine_MD = load_nifti_with_affine(original_image_path_MD)
                 original_image_FA, original_affine_FA = load_nifti_with_affine(original_image_path_FA)
+                original_image_AVG, original_affine_AVG = load_nifti_with_affine(original_image_path_AVG)
                 
                 # Calculate scale factor
                 scale_factor  = calculate_scale_factor(original_affine_MD, crop_mask_path)
@@ -712,10 +728,6 @@ def process_folders(pred_folder, gt_folder, main_folder, metrics_data, metrics_e
                 hausdorff_distance_label3 = results_original.get('Hausdorff_3 (pixels/mm)', np.nan)
                 avg_hausdorff_epi= results_original.get('Avg. HD epi',np.nan)
                 avg_hausdorff_endo= results_original.get('Avg. HD endo',np.nan)
-                
-
-                
-                
                 dice_original_1= dice_score_original(original_gt_mask, original_pred_mask, label=1)
                 #dice_original_2= dice_score_original(original_gt_mask, original_pred_mask, label=2)
                 #dice_original_3= dice_score_original(original_gt_mask, original_pred_mask, label=3)
@@ -726,7 +738,12 @@ def process_folders(pred_folder, gt_folder, main_folder, metrics_data, metrics_e
 
                 gt_median_FA, pred_median_FA ,median_percentage_difference_FA  = histogram_comparison(original_gt_mask, original_pred_mask, original_image_FA, label=1)
 
+                plot_original_with_masks(original_image_AVG, original_pred_mask, original_gt_mask, scale_factor=1.0, filename = pred_file)
+                print(f'Original plots..')
+
                 #Readjust to 1.25mm for right [mm]!
+                #Needs to be based on image spacing, double check with new data if still the same..
+
                 hausdorff_distance_label2=1.25*hausdorff_distance_label2
                 hausdorff_distance_label3=1.25*hausdorff_distance_label3
                 avg_hausdorff_epi=1.25*avg_hausdorff_epi
@@ -754,6 +771,9 @@ def process_folders(pred_folder, gt_folder, main_folder, metrics_data, metrics_e
                     'F1 Label 1' : f1_original,
                     'Precision':precision,
                     'Recall':recall,   
+                    #
+                    #HAP_gt
+                    #hap
                     
 
                 }
