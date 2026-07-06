@@ -24,9 +24,8 @@ already produce*, so the existing evaluation code (``eval_util.py``,
   "cleaned" Stage-1 crop mask that the rest of the pipeline consumes.
 * ``detect_rvips``     -> two points (or ``None`` on low confidence -> a *clean*
   failure instead of a wild 1250 mm outlier).
-* ``rvips_to_mask``    -> disks written as labels **2** (anterior) and **3**
-  (inferior), matching the combined-mask convention from
-  ``process_mask_slices`` (label 1 = LV, 2 = anterior RVIP, 3 = inferior RVIP).
+* ``rvips_to_mask``    -> disks written as labels **1** (anterior / IP1) and **2**
+  (inferior / IP2), matching Dataset105_HannumSmartHealthDataIPs (IPs-only, no LV).
 
 RVIP detection uses the **tiny-bbox + center** formulation (chosen over a single
 keypoint): a box carries spatial extent and a confidence score, so a weak
@@ -79,10 +78,32 @@ CROP_CLASS_ID = 0          # single class for the whole-heart crop model
 ANTERIOR_CLASS_ID = 0      # RVIP model, class 0 -> anterior insertion point
 INFERIOR_CLASS_ID = 1      # RVIP model, class 1 -> inferior insertion point
 
-# Output combined-mask labels (matches process_mask_slices in data_image_mask_making/)
-LV_LABEL = 1
-ANTERIOR_LABEL = 2
-INFERIOR_LABEL = 3
+# RVIP GT label ids. These match Dataset105_HannumSmartHealthDataIPs (IPs-only,
+# no LV): background 0, IP1 = 1 (anterior insertion point), IP2 = 2 (inferior).
+# NOTE: an *older* combined-mask convention used LV=1, anterior=2, inferior=3 (and
+# eval_util.py still hardcodes 2/3). Dataset105 does NOT follow that; it is 1/2.
+# Both GT reading and predicted-mask writing below use these ids, so YOLO output is
+# directly comparable to the Dataset105 GT.
+ANTERIOR_LABEL = 1         # IP1 in dataset.json
+INFERIOR_LABEL = 2         # IP2 in dataset.json
+
+
+# ---------------------------------------------------------------------------
+# Multi-contrast input convention
+# ---------------------------------------------------------------------------
+# nnUNet stores each contrast of a case as a separate file with a 4-digit
+# channel suffix: ``CASE_0000.nii.gz`` (contrast 1), ``CASE_0001.nii.gz`` ...
+# YOLOv8 expects a 3-channel (RGB-like) image, so we map up to three nnUNet
+# contrasts onto R/G/B. ``CHANNELS`` selects *which* contrast index feeds each
+# of the three YOLO channels:
+#
+#   (0, 0, 0)  -> "version 3": replicate the first contrast into all 3 channels
+#                 (grayscale-as-RGB; identical information to the old behaviour).
+#   (0, 1, 2)  -> "version 1": three *distinct* contrasts as R, G, B, so the
+#                 detector actually sees multi-contrast information.
+#
+# Any 3 indices are allowed (e.g. (0, 2, 3) to pick a subset of four contrasts).
+DEFAULT_CHANNELS = (0, 0, 0)
 
 
 # ===========================================================================
@@ -173,6 +194,81 @@ def load_nifti(path: str) -> np.ndarray:
     return np.squeeze(data)
 
 
+def _channel_path(image_path: str, channel: int) -> str:
+    """Sibling path for a given nnUNet channel index.
+
+    Given the channel-0 file (``.../CASE_0000.nii.gz``) return the path for
+    ``channel`` (``.../CASE_0001.nii.gz`` etc.). If the filename has no 4-digit
+    channel token the original path is returned unchanged.
+    """
+    dirname, fname = os.path.split(image_path)
+    for ext in (".nii.gz", ".nii"):
+        if fname.endswith(ext):
+            stem = fname[: -len(ext)]
+            break
+    else:
+        stem, ext = os.path.splitext(fname)
+    if len(stem) >= 5 and stem[-5] == "_" and stem[-4:].isdigit():
+        stem = stem[:-4] + f"{channel:04d}"
+    return os.path.join(dirname, stem + ext)
+
+
+def load_channels(image_path: str,
+                  channels: Sequence[int] = DEFAULT_CHANNELS) -> list:
+    """Load the requested nnUNet contrast(s) for a case as a list of 2D arrays.
+
+    ``image_path`` is the channel-0 file; each index in ``channels`` is resolved
+    to its sibling file via :func:`_channel_path` and loaded. With ``(0, 0, 0)``
+    the same file is loaded three times (cheap; version 3); with ``(0, 1, 2)``
+    three distinct contrasts are loaded (version 1).
+    """
+    arrays = []
+    for c in channels:
+        p = _channel_path(image_path, c)
+        if not os.path.exists(p):
+            raise FileNotFoundError(
+                f"load_channels: contrast {c} not found at {p} "
+                f"(derived from {image_path}). Check your CHANNELS vs the "
+                f"number of contrasts in the dataset."
+            )
+        arrays.append(load_nifti(p))
+    return arrays
+
+
+def _stack_rgb(arrays: Sequence[np.ndarray]) -> np.ndarray:
+    """Per-channel min-max normalize 2D arrays and stack into (H, W, 3) uint8.
+
+    Accepts 1..N arrays: fewer than 3 are padded by repeating the last channel
+    (so a single array -> classic grayscale-as-RGB); more than 3 use the first
+    three. Each channel is normalized *independently* so a weak contrast still
+    uses the full 8-bit range.
+    """
+    arrays = list(arrays)
+    if not arrays:
+        raise ValueError("_stack_rgb: need at least one array.")
+    chans = [_normalize_to_uint8(a) for a in arrays[:3]]
+    while len(chans) < 3:
+        chans.append(chans[-1])
+    return np.stack(chans, axis=-1)
+
+
+def _prepare_rgb(image) -> np.ndarray:
+    """Coerce assorted inputs into an (H, W, 3) uint8 RGB image for YOLO.
+
+    * a single 2D array          -> replicated to 3 channels (version 3);
+    * a list/tuple of 2D arrays  -> stacked as R/G/B (version 1);
+    * an (H, W, C) array         -> its channels stacked (C may be 1, 3, ...).
+    """
+    if isinstance(image, (list, tuple)):
+        return _stack_rgb(image)
+    image = np.asarray(image)
+    if image.ndim == 2:
+        return _stack_rgb([image])
+    if image.ndim == 3:
+        return _stack_rgb([image[..., i] for i in range(image.shape[-1])])
+    raise ValueError(f"_prepare_rgb: unsupported image shape {image.shape}")
+
+
 # ===========================================================================
 # B1. Label export  (existing ground truth  ->  YOLO format)
 # ===========================================================================
@@ -181,14 +277,21 @@ def load_nifti(path: str) -> np.ndarray:
 # and images live alongside in a parallel folder. write_data_yaml() ties it
 # together.
 
-def nifti_to_yolo_image(nifti_path: str, out_png_path: str) -> None:
-    """Normalize a NIfTI slice and save it as an 8-bit PNG for YOLO training."""
+def nifti_to_yolo_image(nifti_path: str, out_png_path: str,
+                        channels: Sequence[int] = DEFAULT_CHANNELS) -> None:
+    """Save a case's contrast(s) as an 8-bit 3-channel PNG for YOLO training.
+
+    ``nifti_path`` is the channel-0 file; ``channels`` selects which nnUNet
+    contrasts map onto R/G/B (see ``DEFAULT_CHANNELS``). ``(0, 0, 0)`` writes a
+    grayscale-as-RGB PNG (version 3); ``(0, 1, 2)`` writes a true multi-contrast
+    RGB PNG (version 1).
+    """
     from PIL import Image  # lazy; Pillow ships with ultralytics
 
-    arr = load_nifti(nifti_path)
-    png = _normalize_to_uint8(arr)
+    arrays = load_channels(nifti_path, channels)
+    rgb = _stack_rgb(arrays)
     os.makedirs(os.path.dirname(out_png_path), exist_ok=True)
-    Image.fromarray(png).save(out_png_path)
+    Image.fromarray(rgb).save(out_png_path)
 
 
 def crop_mask_to_yolo_label(crop_mask_path: str,
@@ -218,12 +321,13 @@ def combined_mask_to_rvip_label(combined_mask_path: str,
                                 inferior_label: int = INFERIOR_LABEL,
                                 anterior_class: int = ANTERIOR_CLASS_ID,
                                 inferior_class: int = INFERIOR_CLASS_ID) -> list:
-    """GT combined mask (labels 2 & 3) -> YOLO labels for the two RVIPs.
+    """GT insertion-point mask -> YOLO labels for the two RVIPs.
 
-    Each insertion point is a single annotated region; we take its centroid and
-    emit a fixed ``box_px`` x ``box_px`` box around it (tiny-bbox formulation).
-    A point that is absent in the GT is simply skipped. Returns the written
-    lines.
+    Reads the two insertion points from ``anterior_label`` / ``inferior_label``
+    (Dataset105: IP1=1 anterior, IP2=2 inferior). Each point is a single annotated
+    region; we take its centroid and emit a fixed ``box_px`` x ``box_px`` box around
+    it (tiny-bbox formulation). A point absent in the GT is simply skipped. Returns
+    the written lines.
     """
     mask = load_nifti(combined_mask_path)
     img_h, img_w = mask.shape[:2]
@@ -251,7 +355,10 @@ def export_dataset(samples: Iterable[dict],
                    out_dir: str,
                    kind: str = "crop",
                    split_key: str = "split",
-                   box_px: int = 8) -> dict:
+                   box_px: int = 8,
+                   channels: Sequence[int] = DEFAULT_CHANNELS,
+                   anterior_label: int = ANTERIOR_LABEL,
+                   inferior_label: int = INFERIOR_LABEL) -> dict:
     """Materialize a YOLO dataset on disk from a list of sample dicts.
 
     Each ``sample`` is a dict::
@@ -266,6 +373,8 @@ def export_dataset(samples: Iterable[dict],
     ``kind`` selects the label exporter: ``"crop"`` (whole-heart square box from a
     ``Square_Crop_Mask``) or ``"rvip"`` (two insertion-point boxes from a combined
     mask). Mirrors the existing volunteer-level split rather than a random one.
+    ``channels`` selects which nnUNet contrasts feed the R/G/B PNG channels
+    (see ``DEFAULT_CHANNELS``): ``(0, 0, 0)`` = version 3, ``(0, 1, 2)`` = version 1.
 
     Returns a small summary dict with per-split counts.
     """
@@ -275,11 +384,13 @@ def export_dataset(samples: Iterable[dict],
         split = s.get(split_key, "train")
         img_out = os.path.join(out_dir, "images", split, s["name"] + ".png")
         lbl_out = os.path.join(out_dir, "labels", split, s["name"] + ".txt")
-        nifti_to_yolo_image(s["image_path"], img_out)
+        nifti_to_yolo_image(s["image_path"], img_out, channels=channels)
         if kind == "crop":
             crop_mask_to_yolo_label(s["mask_path"], lbl_out)
         else:
-            combined_mask_to_rvip_label(s["mask_path"], lbl_out, box_px=box_px)
+            combined_mask_to_rvip_label(s["mask_path"], lbl_out, box_px=box_px,
+                                        anterior_label=anterior_label,
+                                        inferior_label=inferior_label)
         counts[split] = counts.get(split, 0) + 1
     return counts
 
@@ -338,18 +449,18 @@ def load_model(weights_path: str):
 # ===========================================================================
 # B3. Inference + adapters  (the notebook-facing API)
 # ===========================================================================
-def _predict_boxes(model, image: np.ndarray, conf: float = 0.25):
-    """Run YOLO on a 2D array and return a list of (cls, confidence, cx,cy,w,h).
+def _predict_boxes(model, image, conf: float = 0.25):
+    """Run YOLO on an image and return a list of (cls, confidence, cx,cy,w,h).
 
-    Boxes are returned in *normalized YOLO* coords; callers convert to repo
-    convention as needed. The input array is min-max normalized to an 8-bit
-    3-channel image (YOLO expects RGB-like input).
+    ``image`` may be a single 2D array (grayscale-as-RGB), a list/tuple of 2D
+    contrast arrays (multi-contrast R/G/B), or an already-prepared (H, W, 3)
+    array — see :func:`_prepare_rgb`. Boxes are returned in *normalized YOLO*
+    coords; callers convert to repo convention as needed.
     """
-    png = _normalize_to_uint8(image)
-    rgb = np.stack([png] * 3, axis=-1)  # (H, W, 3)
+    rgb = _prepare_rgb(image)  # (H, W, 3) uint8; idempotent if already prepared
     results = model.predict(rgb, conf=conf, verbose=False)
     out = []
-    img_h, img_w = image.shape[:2]
+    img_h, img_w = rgb.shape[:2]
     for r in results:
         if r.boxes is None:
             continue
@@ -371,15 +482,16 @@ def detect_crop_box(model, image: np.ndarray, conf: float = 0.25):
     nnUNet crop. Returns ``(x_min, x_max, y_min, y_max, scale_factor)`` in repo
     convention, or ``None`` if nothing was detected.
     """
-    dets = _predict_boxes(model, image, conf=conf)
+    rgb = _prepare_rgb(image)
+    dets = _predict_boxes(model, rgb, conf=conf)
     dets = [d for d in dets if d[0] == CROP_CLASS_ID]
     if not dets:
         return None
     _, _, cx, cy, w, h = max(dets, key=lambda d: d[1])  # highest confidence
-    img_h, img_w = image.shape[:2]
+    img_h, img_w = rgb.shape[:2]
     x_min, x_max, y_min, y_max = _bbox_yolo_to_repo(cx, cy, w, h, img_h, img_w)
     # Square it via a binary mask so the logic is byte-identical to the pipeline.
-    raw = _box_to_binary_mask(x_min, x_max, y_min, y_max, image.shape[:2])
+    raw = _box_to_binary_mask(x_min, x_max, y_min, y_max, rgb.shape[:2])
     return make_square_crop(raw)
 
 
@@ -404,8 +516,9 @@ def detect_rvips(model, image: np.ndarray, conf_thresh: float = 0.25) -> dict:
     low-confidence point becomes ``None`` (a clean failure rather than a far-off
     outlier).
     """
-    dets = _predict_boxes(model, image, conf=conf_thresh)
-    img_h, img_w = image.shape[:2]
+    rgb = _prepare_rgb(image)
+    dets = _predict_boxes(model, rgb, conf=conf_thresh)
+    img_h, img_w = rgb.shape[:2]
     result = {"anterior": None, "inferior": None}
     for key, cls in (("anterior", ANTERIOR_CLASS_ID), ("inferior", INFERIOR_CLASS_ID)):
         cands = [d for d in dets if d[0] == cls]
@@ -417,6 +530,26 @@ def detect_rvips(model, image: np.ndarray, conf_thresh: float = 0.25) -> dict:
         y = cx * img_w   # col  / axis 1
         result[key] = (float(x), float(y))
     return result
+
+
+def detect_crop_box_from_path(model, image_path: str,
+                              channels: Sequence[int] = DEFAULT_CHANNELS,
+                              conf: float = 0.25):
+    """``detect_crop_box`` straight from a channel-0 NIfTI path.
+
+    Loads the ``channels`` contrasts for the case (via :func:`load_channels`)
+    and runs detection, so multi-contrast inference needs only the ``_0000``
+    path. Use the *same* ``channels`` you trained with.
+    """
+    return detect_crop_box(model, load_channels(image_path, channels), conf=conf)
+
+
+def detect_rvips_from_path(model, image_path: str,
+                           channels: Sequence[int] = DEFAULT_CHANNELS,
+                           conf_thresh: float = 0.25) -> dict:
+    """``detect_rvips`` straight from a channel-0 NIfTI path (see above)."""
+    return detect_rvips(model, load_channels(image_path, channels),
+                        conf_thresh=conf_thresh)
 
 
 def rvips_to_mask(points: dict,

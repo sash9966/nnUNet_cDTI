@@ -92,6 +92,13 @@ dev = [
 requires = ["setuptools>=67.8.0"]
 build-backend = "setuptools.build_meta"
 
+# Only package the nnunetv2 source tree. The repo root also contains data folders
+# (nnUNet_raw, nnUNet_preprocessed, nnUNet_results, *TestData, ...); without this,
+# setuptools flat-layout auto-discovery finds multiple top-level packages and aborts.
+[tool.setuptools.packages.find]
+include = ["nnunetv2*"]
+namespaces = false
+
 [tool.codespell]
 skip = '.git,*.pdf,*.svg'
 #
