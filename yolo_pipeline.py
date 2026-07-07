@@ -75,8 +75,14 @@ import nibabel as nib
 # matching the plan. If you ever unify them into a single model, shift the RVIP
 # class ids to 1 and 2 and reserve 0 for the heart.
 CROP_CLASS_ID = 0          # single class for the whole-heart crop model
-ANTERIOR_CLASS_ID = 0      # RVIP model, class 0 -> anterior insertion point
-INFERIOR_CLASS_ID = 1      # RVIP model, class 1 -> inferior insertion point
+ANTERIOR_CLASS_ID = 0      # 2-class RVIP model, class 0 -> anterior insertion point
+INFERIOR_CLASS_ID = 1      # 2-class RVIP model, class 1 -> inferior insertion point
+IP_CLASS_ID = 0            # single-class RVIP model: one "insertion_point" class
+
+# Anterior vs inferior are distinguished by *position*, not local appearance, so a
+# tiny-box classifier can't separate them (and fliplr augmentation scrambles the
+# cue). The single-class model detects both points as IP_CLASS_ID and we assign
+# anterior/inferior afterwards with assign_anterior_inferior() -- see that function.
 
 # RVIP GT label ids. These match Dataset105_HannumSmartHealthDataIPs (IPs-only,
 # no LV): background 0, IP1 = 1 (anterior insertion point), IP2 = 2 (inferior).
@@ -320,20 +326,28 @@ def combined_mask_to_rvip_label(combined_mask_path: str,
                                 anterior_label: int = ANTERIOR_LABEL,
                                 inferior_label: int = INFERIOR_LABEL,
                                 anterior_class: int = ANTERIOR_CLASS_ID,
-                                inferior_class: int = INFERIOR_CLASS_ID) -> list:
+                                inferior_class: int = INFERIOR_CLASS_ID,
+                                single_class: bool = False,
+                                ip_class: int = IP_CLASS_ID) -> list:
     """GT insertion-point mask -> YOLO labels for the two RVIPs.
 
     Reads the two insertion points from ``anterior_label`` / ``inferior_label``
     (Dataset105: IP1=1 anterior, IP2=2 inferior). Each point is a single annotated
     region; we take its centroid and emit a fixed ``box_px`` x ``box_px`` box around
-    it (tiny-bbox formulation). A point absent in the GT is simply skipped. Returns
-    the written lines.
+    it (tiny-bbox formulation). A point absent in the GT is simply skipped.
+
+    ``single_class=True`` writes BOTH points under ``ip_class`` (one detection class)
+    instead of separate anterior/inferior classes -- the recommended formulation,
+    since anterior/inferior are told apart by geometry at inference, not by YOLO.
+    Returns the written lines.
     """
     mask = load_nifti(combined_mask_path)
     img_h, img_w = mask.shape[:2]
     lines = []
     for label, cls in ((anterior_label, anterior_class),
                        (inferior_label, inferior_class)):
+        if single_class:
+            cls = ip_class
         coords = np.argwhere(mask == label)
         if coords.size == 0:
             continue  # this RVIP not annotated on this slice
@@ -358,7 +372,8 @@ def export_dataset(samples: Iterable[dict],
                    box_px: int = 8,
                    channels: Sequence[int] = DEFAULT_CHANNELS,
                    anterior_label: int = ANTERIOR_LABEL,
-                   inferior_label: int = INFERIOR_LABEL) -> dict:
+                   inferior_label: int = INFERIOR_LABEL,
+                   single_class: bool = False) -> dict:
     """Materialize a YOLO dataset on disk from a list of sample dicts.
 
     Each ``sample`` is a dict::
@@ -397,15 +412,23 @@ def export_dataset(samples: Iterable[dict],
         else:
             combined_mask_to_rvip_label(s["mask_path"], lbl_out, box_px=box_px,
                                         anterior_label=anterior_label,
-                                        inferior_label=inferior_label)
+                                        inferior_label=inferior_label,
+                                        single_class=single_class)
         counts[split] = counts.get(split, 0) + 1
     return counts
 
 
-def write_data_yaml(out_dir: str, kind: str = "crop") -> str:
-    """Write the ``data.yaml`` describing an exported dataset. Returns its path."""
+def write_data_yaml(out_dir: str, kind: str = "crop",
+                    single_class: bool = False) -> str:
+    """Write the ``data.yaml`` describing an exported dataset. Returns its path.
+
+    For ``kind='rvip'``, ``single_class=True`` declares one ``insertion_point`` class
+    (must match how the labels were exported).
+    """
     if kind == "crop":
         names = {CROP_CLASS_ID: "heart"}
+    elif single_class:
+        names = {IP_CLASS_ID: "insertion_point"}
     else:
         names = {ANTERIOR_CLASS_ID: "anterior_rvip",
                  INFERIOR_CLASS_ID: "inferior_rvip"}
@@ -433,18 +456,22 @@ def train_yolo(data_yaml: str,
                imgsz: int = 256,
                project: str = "yolo_runs",
                name: str = "crop",
+               exist_ok: bool = True,
                **kwargs):
     """Thin wrapper over ``ultralytics.YOLO(...).train(...)``.
 
     Call once for the crop model and once for the RVIP model (with the matching
     ``data.yaml`` and a distinct ``name``). Returns the trained ``YOLO`` object;
     best weights are saved under ``<project>/<name>/weights/best.pt``.
+
+    ``exist_ok=True`` (default) overwrites ``<project>/<name>`` on re-run instead of
+    spawning ``name2``, ``name3`` ... so ``weights/best.pt`` stays at a stable path.
     """
     from ultralytics import YOLO
 
     yolo = YOLO(model)
     yolo.train(data=data_yaml, epochs=epochs, imgsz=imgsz,
-               project=project, name=name, **kwargs)
+               project=project, name=name, exist_ok=exist_ok, **kwargs)
     return yolo
 
 
@@ -515,28 +542,66 @@ def crop_box_to_mask(box, shape) -> np.ndarray:
     return _box_to_binary_mask(x_min, x_max, y_min, y_max, shape)
 
 
-def detect_rvips(model, image: np.ndarray, conf_thresh: float = 0.25) -> dict:
+def assign_anterior_inferior(points, flip: bool = False) -> dict:
+    """Label two detected insertion points as anterior / inferior by geometry.
+
+    Anterior vs inferior differ by *position*, not appearance, so the single-class
+    detector returns two anonymous points and we assign them here. Rule: in the
+    short-axis crop the **anterior** insertion sits higher than the inferior one, so
+    the point with the smaller row (axis-0) is anterior. Set ``flip=True`` if a
+    quick check against GT shows the convention is reversed for your data.
+
+    ``points`` is a list of ``(x, y)`` in repo convention (x = row, y = col).
+    Returns ``{"anterior": (x, y) | None, "inferior": (x, y) | None}`` -- with 0 or
+    1 detections the missing point(s) are ``None`` (a clean failure).
+    """
+    result = {"anterior": None, "inferior": None}
+    pts = list(points)[:2]
+    if len(pts) == 1:
+        result["anterior"] = pts[0]        # only one point: report it, leave the other None
+        return result
+    if len(pts) == 2:
+        hi, lo = sorted(pts, key=lambda p: p[0])   # smaller row = higher = anterior
+        if flip:
+            hi, lo = lo, hi
+        result["anterior"], result["inferior"] = hi, lo
+    return result
+
+
+def detect_rvips(model, image: np.ndarray, conf_thresh: float = 0.25,
+                 single_class: bool = False, flip_assignment: bool = False) -> dict:
     """Detect the two RV insertion points.
 
     Returns ``{"anterior": (x, y) | None, "inferior": (x, y) | None}`` with points
-    in repo convention (x = row/axis-0, y = col/axis-1). For each class we keep the
-    highest-confidence box above ``conf_thresh`` and take its center; a missing or
-    low-confidence point becomes ``None`` (a clean failure rather than a far-off
-    outlier).
+    in repo convention (x = row/axis-0, y = col/axis-1). A missing / low-confidence
+    point becomes ``None`` (a clean failure rather than a far-off outlier).
+
+    Two modes:
+    * ``single_class=True`` (recommended): the model has one insertion-point class;
+      we take the two highest-confidence detections and label them anterior/inferior
+      with :func:`assign_anterior_inferior` (``flip_assignment`` inverts the rule).
+    * ``single_class=False``: legacy 2-class model, one box per class.
     """
     rgb = _prepare_rgb(image)
     dets = _predict_boxes(model, rgb, conf=conf_thresh)
     img_h, img_w = rgb.shape[:2]
+
+    def _center(cx, cy):
+        return (float(cy * img_h), float(cx * img_w))   # (row, col) in repo convention
+
+    if single_class:
+        cands = sorted((d for d in dets if d[0] == IP_CLASS_ID),
+                       key=lambda d: d[1], reverse=True)[:2]
+        pts = [_center(cx, cy) for _, _, cx, cy, w, h in cands]
+        return assign_anterior_inferior(pts, flip=flip_assignment)
+
     result = {"anterior": None, "inferior": None}
     for key, cls in (("anterior", ANTERIOR_CLASS_ID), ("inferior", INFERIOR_CLASS_ID)):
         cands = [d for d in dets if d[0] == cls]
         if not cands:
             continue
         _, _, cx, cy, w, h = max(cands, key=lambda d: d[1])
-        # center: cx is col (y here), cy is row (x here)
-        x = cy * img_h   # row  / axis 0
-        y = cx * img_w   # col  / axis 1
-        result[key] = (float(x), float(y))
+        result[key] = _center(cx, cy)
     return result
 
 
@@ -554,10 +619,13 @@ def detect_crop_box_from_path(model, image_path: str,
 
 def detect_rvips_from_path(model, image_path: str,
                            channels: Sequence[int] = DEFAULT_CHANNELS,
-                           conf_thresh: float = 0.25) -> dict:
+                           conf_thresh: float = 0.25,
+                           single_class: bool = False,
+                           flip_assignment: bool = False) -> dict:
     """``detect_rvips`` straight from a channel-0 NIfTI path (see above)."""
     return detect_rvips(model, load_channels(image_path, channels),
-                        conf_thresh=conf_thresh)
+                        conf_thresh=conf_thresh, single_class=single_class,
+                        flip_assignment=flip_assignment)
 
 
 def rvips_to_mask(points: dict,
