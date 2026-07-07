@@ -379,6 +379,13 @@ def export_dataset(samples: Iterable[dict],
     Returns a small summary dict with per-split counts.
     """
     assert kind in ("crop", "rvip"), "kind must be 'crop' or 'rvip'"
+    samples = list(samples)
+    if not samples:
+        raise ValueError(
+            "export_dataset: got 0 samples, nothing to export. Check that the "
+            "images/labels dirs exist and that filenames match '*_0000.nii.gz' "
+            "(a common cause is a stale dataset folder name in the config)."
+        )
     counts = {}
     for s in samples:
         split = s.get(split_key, "train")
@@ -403,6 +410,7 @@ def write_data_yaml(out_dir: str, kind: str = "crop") -> str:
         names = {ANTERIOR_CLASS_ID: "anterior_rvip",
                  INFERIOR_CLASS_ID: "inferior_rvip"}
     names_block = "\n".join(f"  {k}: {v}" for k, v in sorted(names.items()))
+    os.makedirs(out_dir, exist_ok=True)
     yaml_path = os.path.join(out_dir, "data.yaml")
     content = (
         f"path: {os.path.abspath(out_dir)}\n"
