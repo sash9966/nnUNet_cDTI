@@ -655,6 +655,38 @@ def rvips_to_mask(points: dict,
 
 
 # ===========================================================================
+# B4. Evaluation helpers (point-distance)
+# ===========================================================================
+def insertion_points_from_mask(mask_path: str,
+                               anterior_label: int = ANTERIOR_LABEL,
+                               inferior_label: int = INFERIOR_LABEL) -> dict:
+    """GT anterior/inferior insertion-point centroids from a labelled mask.
+
+    Returns ``{"anterior": (x, y) | None, "inferior": (x, y) | None}`` in repo
+    convention (x = row/axis-0, y = col/axis-1). A label absent in the mask -> None.
+    Mirrors how the labels were exported (Dataset105: IP1=1 anterior, IP2=2 inferior).
+    """
+    mask = load_nifti(mask_path)
+    out = {"anterior": None, "inferior": None}
+    for key, label in (("anterior", anterior_label), ("inferior", inferior_label)):
+        coords = np.argwhere(mask == label)
+        if coords.size:
+            cx, cy = coords.mean(axis=0)
+            out[key] = (float(cx), float(cy))
+    return out
+
+
+def euclidean(p, q):
+    """Euclidean distance between two ``(x, y)`` points; ``None`` if either is None.
+
+    ``None`` propagates so a missed detection is reported as a miss, not a distance.
+    """
+    if p is None or q is None:
+        return None
+    return float(np.hypot(p[0] - q[0], p[1] - q[1]))
+
+
+# ===========================================================================
 # Convenience: discover GT files for export (optional, layout-aware helper)
 # ===========================================================================
 def find_crop_samples(main_folder: str,
