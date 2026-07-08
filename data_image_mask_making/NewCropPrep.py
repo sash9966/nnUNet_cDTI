@@ -1,4 +1,6 @@
 import os
+import glob
+import re
 import nibabel as nib
 import pandas as pd
 import numpy as np
@@ -69,10 +71,20 @@ for root_folder in root_folders:
                     if os.path.exists(excel_path):
                         quality_data = pd.read_excel(excel_path)
 
-                        # Check if the "Image Quality" column has "Good Image" for all rows (3 slices)
-                        
-                            # Proceed with the images only if all slices are of good quality
-                        for i in range(1, 4):
+                        mask_folder = os.path.join(divo_path, '02_Crop_Masks')
+                        image_folder = os.path.join(divo_path, '03_Segmentation_Images')
+
+                        # Count how many crop-mask slices actually exist in this sub-folder
+                        # (was hard-coded to the first 3 slices; folders can have many more, e.g. up to 12).
+                        slice_files = glob.glob(os.path.join(mask_folder, 'Square_Crop_Mask_Slice_*.nii'))
+                        slice_numbers = sorted(
+                            int(re.search(r'Slice_(\d+)\.nii$', f).group(1)) for f in slice_files
+                        )
+                        num_slices = len(slice_numbers)
+                        print(f'{volunteer_folder}/{divo_folder}: found {num_slices} slices -> {slice_numbers}')
+
+                        # Loop through every slice that exists in this folder
+                        for i in slice_numbers:
                             # Filter rows where "Slice Number" equals i
                             slice_data = quality_data[quality_data['Slice Number'] == i]
     
@@ -85,8 +97,8 @@ for root_folder in root_folders:
                                 mask_folder = os.path.join(divo_path, '02_Crop_Masks')
                                 image_folder = os.path.join(divo_path, '03_Segmentation_Images')
                                 # Select mask and image files for each iteration
-                                mask_file = os.path.join(mask_folder, f'Square_Crop_Mask_Slice_00{i}.nii')
-                                image_file = os.path.join(image_folder, f'Average_Diffusion_Weighted_Image_Slice_00{i}.nii')
+                                mask_file = os.path.join(mask_folder, f'Square_Crop_Mask_Slice_{i:03d}.nii')
+                                image_file = os.path.join(image_folder, f'Average_Diffusion_Weighted_Image_Slice_{i:03d}.nii')
 
         
                                 if os.path.exists(mask_file) and os.path.exists(image_file):
@@ -98,7 +110,7 @@ for root_folder in root_folders:
                                     image_img = nib.load(image_file)
                                     image_data = image_img.get_fdata()
 
-                                    common_name_id = f'{root_folder}_{volunteer_folder}_{divo_folder}_slice_00{i}'
+                                    common_name_id = f'{root_folder}_{volunteer_folder}_{divo_folder}_slice_{i:03d}'
 
                                     mask_output_filename = os.path.join(output_mask_folder,
                                                                         f'{common_name_id}.nii.gz') 
