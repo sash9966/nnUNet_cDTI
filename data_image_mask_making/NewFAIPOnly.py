@@ -2,6 +2,8 @@
 
 
 import os
+import glob
+import re
 import nibabel as nib
 import numpy as np
 import matplotlib.pyplot as plt
@@ -120,18 +122,26 @@ for root_folder in root_folders:
                     if os.path.exists(excel_path):
                         quality_data = pd.read_excel(excel_path)
 
-                        # Check if the "Image Quality" column has "Good Image" for all rows (3 slices)
-                        
-                            # Proceed with the images only if all slices are of good quality
-                        for i in range(1, 4):
-                            mask_folder = os.path.join(divo_path, '06_Segmentation_Masks_CI')
-                            image_folder = os.path.join(divo_path, '05_Segmentation_Images_CI')
+                        mask_folder = os.path.join(divo_path, '06_Segmentation_Masks_CI')
+                        image_folder = os.path.join(divo_path, '05_Segmentation_Images_CI')
+
+                        # Count how many segmentation slices actually exist in this sub-folder
+                        # (was hard-coded to the first 3 slices; folders can have many more, e.g. up to 12).
+                        slice_files = glob.glob(os.path.join(mask_folder, 'Cropped_Segmentation_Slice_*.nii'))
+                        slice_numbers = sorted(
+                            int(re.search(r'Slice_(\d+)\.nii$', f).group(1)) for f in slice_files
+                        )
+                        num_slices = len(slice_numbers)
+                        print(f'{volunteer_folder}/{divo_folder}: found {num_slices} slices -> {slice_numbers}')
+
+                        # Loop through every slice that exists in this folder
+                        for i in slice_numbers:
                             # Filter rows where "Slice Number" equals i
                             slice_data = quality_data[quality_data['Slice Number'] == i]
 
                             # Check if we found a matching row and if that row’s image quality is "Good Image Quality"
                             if not slice_data.empty and slice_data.iloc[0]['Image Quality'] == 'Good Image Quality':
-                                mask_file = os.path.join(mask_folder, f'Cropped_Segmentation_Slice_00{i}.nii')
+                                mask_file = os.path.join(mask_folder, f'Cropped_Segmentation_Slice_{i:03d}.nii')
                                 
                             
                                 mask_img = nib.load(mask_file)
@@ -144,10 +154,10 @@ for root_folder in root_folders:
                                 combined_mask = process_mask_slices(mask_data,lv_only=False)
 
                                 
-                                avg_image_file = os.path.join(image_folder, f'Cropped_Average_Diffusion_Weighted_Image_Slice_00{i}.nii')
-                                mean_diff_file = os.path.join(image_folder, f'Cropped_Mean_Diffusivty_Image_Slice_00{i}.nii')
-                                eigenvector_file = os.path.join(image_folder, f'Cropped_Primary_Eigenvector_Image_Slice_00{i}.nii')
-                                FA_file = os.path.join(image_folder, f'Cropped_Fractional_Anisotropy_Image_Slice_00{i}.nii')
+                                avg_image_file = os.path.join(image_folder, f'Cropped_Average_Diffusion_Weighted_Image_Slice_{i:03d}.nii')
+                                mean_diff_file = os.path.join(image_folder, f'Cropped_Mean_Diffusivty_Image_Slice_{i:03d}.nii')
+                                eigenvector_file = os.path.join(image_folder, f'Cropped_Primary_Eigenvector_Image_Slice_{i:03d}.nii')
+                                FA_file = os.path.join(image_folder, f'Cropped_Fractional_Anisotropy_Image_Slice_{i:03d}.nii')
 
                                 if os.path.exists(mask_file) and os.path.exists(avg_image_file) and os.path.exists(mean_diff_file) and os.path.exists(eigenvector_file):
 
@@ -178,7 +188,7 @@ for root_folder in root_folders:
                                     combined_image_data = np.stack([avg_image_data, mean_diff_data, combined_eigenvector_data], axis=-1)
 
                                     # Save each channel separately (modality files with 0000, 0001, 0002 suffixes)
-                                    common_name_id = f'{root_folder}_{volunteer_folder}_{divo_folder}_slice_00{i}'
+                                    common_name_id = f'{root_folder}_{volunteer_folder}_{divo_folder}_slice_{i:03d}'
 
                                     # Save Average Diffusion Image as _0000
                                     nib.save(nib.Nifti1Image(avg_image_data, avg_img.affine), 
