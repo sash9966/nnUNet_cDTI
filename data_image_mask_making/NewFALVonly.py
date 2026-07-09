@@ -63,6 +63,14 @@ def normalise_MD(image):
     image_max = 4
     return (image - image_min) / (image_max - image_min)
 
+def normalise_eigenvector(image):
+    # X and Y are components of a UNIT eigenvector (x^2+y^2+z^2=1), so their sum is
+    # capped at sqrt(2) (~1.414), not 2 -- the unit-norm constraint couples them.
+    # Divide by that fixed sqrt(2) ceiling instead of min-max: every image reaches
+    # sqrt(2), whereas a true 0 (a purely through-plane voxel) exists in only ~46%
+    # of images, so min-max would anchor on a noise-driven floor. Fixed = stable.
+    return image / np.sqrt(2)
+
 # Function to save images for inspection
 def save_inspection_plots(image_data, mask_data, filename_base):
     """Saves inspection plots of image, mask, and overlay using matplotlib."""
@@ -173,7 +181,7 @@ for root_folder in root_folders:
 
                                     # Combine eigenvector slices 1 and 2 into a single slice
                                     combined_eigenvector_data = eigenvector_slice1 + eigenvector_slice2
-                                    combined_eigenvector_data = normalize_image(combined_eigenvector_data)
+                                    combined_eigenvector_data = normalise_eigenvector(combined_eigenvector_data)
 
                                     # Stack all three channels (average, mean diffusivity, combined eigenvector)
                                     combined_image_data = np.stack([avg_image_data, mean_diff_data, combined_eigenvector_data], axis=-1)
