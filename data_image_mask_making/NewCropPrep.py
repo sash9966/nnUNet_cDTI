@@ -7,9 +7,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 # Root directory and subfolders
-pwd = '/Users/saschastocker/Documents/Stanford/work2024/FIMH2025'
-root_folders = ['HannumTestVol3DirvsAverages']
-datasetname = 'TestDatasetCrop'
+pwd = '/Users/saschastocker/Documents/Stanford/DanEnnis20242025/Paper2025Automatic/Smart_Health'
+root_folders = ['Hannum']
+datasetname = 'Dataset110_HannumSmarthHealthDataCrop'
 output_mask_folder = f'{pwd}/{datasetname}/labelsTr'
 output_image_folder = f'{pwd}/{datasetname}/imagesTr'
 inspection_folder = f'{pwd}/inspection{datasetname}'
@@ -18,6 +18,12 @@ inspection_folder = f'{pwd}/inspection{datasetname}'
 os.makedirs(output_mask_folder, exist_ok=True)
 os.makedirs(output_image_folder, exist_ok=True)
 os.makedirs(inspection_folder, exist_ok=True)
+
+# Function to normalize images to [0, 1] range
+def normalize_image(image):
+    image_min = np.min(image)
+    image_max = np.max(image)
+    return (image - image_min) / (image_max - image_min)
 
 # Function to save images for inspection
 def save_inspection_plots(image_data, mask_data, filename_base):
@@ -109,6 +115,7 @@ for root_folder in root_folders:
                                     # Load the NIfTI image file (no slicing needed)
                                     image_img = nib.load(image_file)
                                     image_data = image_img.get_fdata()
+                                    image_data = normalize_image(image_data)
 
                                     common_name_id = f'{root_folder}_{volunteer_folder}_{divo_folder}_slice_{i:03d}'
 

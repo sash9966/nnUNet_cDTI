@@ -53,16 +53,15 @@ def process_mask_slices(mask_data,lv_only ):
     return combined_mask
 
 # Function to normalize images to [0, 1] range
-#Use nnUnet normaliser!
-# def normalize_image(image):
-#     image_min = np.min(image)
-#     image_max = np.max(image)
-#     return (image - image_min) / (image_max - image_min)
+def normalize_image(image):
+    image_min = np.min(image)
+    image_max = np.max(image)
+    return (image - image_min) / (image_max - image_min)
 
-# def normalise_MD(image):
-#     image_min = 0
-#     image_max = 4
-#     return (image - image_min) / (image_max - image_min)
+def normalise_MD(image):
+    image_min = 0
+    image_max = 4
+    return (image - image_min) / (image_max - image_min)
 
 # Function to save images for inspection
 def save_inspection_plots(image_data, mask_data, filename_base):
@@ -167,14 +166,14 @@ for root_folder in root_folders:
                                     FA_image_data = FA_image.get_fdata()
 
                                     # Normalize each image to [0, 1] range to prevent "washed out" effect
-                                    #avg_image_data = normalize_image(avg_image_data)
-                                    #mean_diff_data = normalise_MD(mean_diff_data)
+                                    avg_image_data = normalize_image(avg_image_data)
+                                    mean_diff_data = normalise_MD(mean_diff_data)
                                     eigenvector_slice1 = eigenvector_data[:, :, 0]
                                     eigenvector_slice2 = eigenvector_data[:, :, 1]
 
                                     # Combine eigenvector slices 1 and 2 into a single slice
                                     combined_eigenvector_data = eigenvector_slice1 + eigenvector_slice2
-                                    #combined_eigenvector_data_normalized = normalize_image(combined_eigenvector_data)
+                                    combined_eigenvector_data = normalize_image(combined_eigenvector_data)
 
                                     # Stack all three channels (average, mean diffusivity, combined eigenvector)
                                     combined_image_data = np.stack([avg_image_data, mean_diff_data, combined_eigenvector_data], axis=-1)
