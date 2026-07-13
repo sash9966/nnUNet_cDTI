@@ -29,7 +29,7 @@ import pandas as pd
 # Root directory and subfolders
 pwd = '/Users/saschastocker/Documents/Stanford/DanEnnis20242025/Paper2025Automatic/Smart_Health'
 root_folders = ['Hannum']
-datasetname = 'Dataset111_HannumSmartHealthFullLVIP'
+datasetname = 'Dataset120_HannumSmartHealthFullLVIP'
 output_mask_folder = f'{pwd}/{datasetname}/labelsTr'
 output_image_folder = f'{pwd}/{datasetname}/imagesTr'
 inspection_folder = f'{pwd}/inspection{datasetname}'
