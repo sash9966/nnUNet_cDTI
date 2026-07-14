@@ -653,8 +653,13 @@ def process_folders(pred_folder, gt_folder, main_folder, metrics_data, metrics_e
             )
             original_image_path_FA = os.path.join(
                 main_folder,
-                parts[0], volunteer_id, 'Distortion_Corrected', divo_folder, 
+                parts[0], volunteer_id, 'Distortion_Corrected', divo_folder,
                 '03_Segmentation_Images', 'Fractional_Anisotropy_Image_Slice_' + slice_name
+            )
+            original_image_path_DWI = os.path.join(
+                main_folder,
+                parts[0], volunteer_id, 'Distortion_Corrected', divo_folder,
+                '03_Segmentation_Images', 'Average_Diffusion_Weighted_Image_Slice_' + slice_name
             )
 
             print(f'original_image_path: {original_image_path_MD}')
@@ -742,6 +747,13 @@ def process_folders(pred_folder, gt_folder, main_folder, metrics_data, metrics_e
 
                 gt_median_FA, pred_median_FA ,median_percentage_difference_FA  = histogram_comparison(original_gt_mask, original_pred_mask, original_image_FA, label=1)
 
+                # DWI (average diffusion-weighted image) median under the LV mask -- same physical comparison as MD/FA
+                if os.path.exists(original_image_path_DWI):
+                    original_image_DWI, _ = load_nifti_with_affine(original_image_path_DWI)
+                    gt_median_DWI, pred_median_DWI, median_percentage_difference_DWI = histogram_comparison(original_gt_mask, original_pred_mask, original_image_DWI, label=1)
+                else:
+                    gt_median_DWI = pred_median_DWI = median_percentage_difference_DWI = float('nan')
+
                 #Readjust to 1.25mm for right [mm]!
                 hausdorff_distance_label2=1.25*hausdorff_distance_label2
                 hausdorff_distance_label3=1.25*hausdorff_distance_label3
@@ -765,6 +777,9 @@ def process_folders(pred_folder, gt_folder, main_folder, metrics_data, metrics_e
                     'GT_Median_FA': gt_median_FA,
                     'Pred_median_FA':pred_median_FA,
                     'Mean Percentage Difference Label 1 GT FA': median_percentage_difference_FA,
+                    'GT_Median_DWI': gt_median_DWI,
+                    'Pred_median_DWI': pred_median_DWI,
+                    'Mean Percentage Difference Label 1 GT DWI': median_percentage_difference_DWI,
                     'Avg. HD Epi': avg_hausdorff_epi,
                     'Avg. HD Endo': avg_hausdorff_endo,
                     'F1 Label 1' : f1_original,
