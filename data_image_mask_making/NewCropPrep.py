@@ -11,11 +11,11 @@ import matplotlib.pyplot as plt
 COHORTS = [
     # (data path, folder-root, case-prefix). Both cohorts now live under 'Hannum', so the PREFIX
     # (not the folder name) keeps case ids distinct and lets specific_split_combined detect DirVsAvg.
-    ('/Users/saschastocker/Documents/Stanford/DanEnnis20242025/WholeHeartCropISMRM/Data/SmartHealth', 'Hannum', 'Hannum'),
-    ('/Users/saschastocker/Documents/Stanford/DanEnnis20242025/WholeHeartCropISMRM/Data/DirVsAvg',    'Hannum', 'DirVsAvgHannum'),
+    ('/Users/saschastocker/Documents/Stanford/DanEnnis20242025/WholeHeartCropISMRM/Data/SmartHealth', 'Hannum', 'SmartHealth'),
+    ('/Users/saschastocker/Documents/Stanford/DanEnnis20242025/WholeHeartCropISMRM/Data/DirVsAvg',    'Hannum', 'DirVsAvg'),
 ]
 OUTPUT_PWD = '/Users/saschastocker/Documents/Stanford/DanEnnis20242025/WholeHeartCropISMRM/Data/SmartHealth'
-datasetname = 'Dataset312_HannumSmartHealthandDirVsAvgsCrop'   # crop is DWI-only (1 channel) -> no CONTRASTS; identical data to Dataset302
+datasetname = 'Dataset111_SmartHealthandDirVsAvgCrop'   # crop is DWI-only (1 channel) -> no CONTRASTS; identical data to Dataset302
 output_mask_folder = f'{OUTPUT_PWD}/{datasetname}/labelsTr'
 output_image_folder = f'{OUTPUT_PWD}/{datasetname}/imagesTr'
 inspection_folder = f'{OUTPUT_PWD}/inspection{datasetname}'

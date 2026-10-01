@@ -14,12 +14,12 @@ import pandas as pd
 COHORTS = [
     # (data path, folder-root, case-prefix). Both cohorts now live under 'Hannum', so the PREFIX
     # (not the folder name) keeps case ids distinct and lets specific_split_combined detect DirVsAvg.
-    ('/Users/saschastocker/Documents/Stanford/DanEnnis20242025/WholeHeartCropISMRM/Data/SmartHealth', 'Hannum', 'Hannum'),
-    ('/Users/saschastocker/Documents/Stanford/DanEnnis20242025/WholeHeartCropISMRM/Data/DirVsAvg',    'Hannum', 'DirVsAvgHannum'),
+    ('/Users/saschastocker/Documents/Stanford/DanEnnis20242025/WholeHeartCropISMRM/Data/SmartHealth', 'Hannum', 'SmartHealth'),
+    ('/Users/saschastocker/Documents/Stanford/DanEnnis20242025/WholeHeartCropISMRM/Data/DirVsAvg',    'Hannum', 'DirVsAvg'),
 ]
 OUTPUT_PWD = '/Users/saschastocker/Documents/Stanford/DanEnnis20242025/WholeHeartCropISMRM/Data/SmartHealth'
 CONTRASTS = [0, 1]   # avg+MD MVP  (use [0, 1, 2, 3] for the full 4-contrast set)
-datasetname = 'Dataset311_HannumSmartHealthandDirVsAvgsIPsMDandAvg'
+datasetname = 'Dataset107_SmartHealthandDirVsAvgIPs'
 output_mask_folder = f'{OUTPUT_PWD}/{datasetname}/labelsTr'
 output_image_folder = f'{OUTPUT_PWD}/{datasetname}/imagesTr'
 inspection_folder = f'{OUTPUT_PWD}/inspection{datasetname}'
