@@ -7,12 +7,18 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 # Root directory and subfolders
-pwd = '/Users/saschastocker/Documents/Stanford/DanEnnis20242025/Paper2025Automatic/Smart_Health'
-root_folders = ['Hannum']
-datasetname = 'Dataset110_HannumSmarthHealthDataCrop'
-output_mask_folder = f'{pwd}/{datasetname}/labelsTr'
-output_image_folder = f'{pwd}/{datasetname}/imagesTr'
-inspection_folder = f'{pwd}/inspection{datasetname}'
+# ---- cohorts to POOL: (un)comment lines to pick SmartHealth / DirVsAverages / both ----
+COHORTS = [
+    # (data path, folder-root, case-prefix). Both cohorts now live under 'Hannum', so the PREFIX
+    # (not the folder name) keeps case ids distinct and lets specific_split_combined detect DirVsAvg.
+    ('/Users/saschastocker/Documents/Stanford/DanEnnis20242025/WholeHeartCropISMRM/Data/SmartHealth', 'Hannum', 'Hannum'),
+    ('/Users/saschastocker/Documents/Stanford/DanEnnis20242025/WholeHeartCropISMRM/Data/DirVsAvg',    'Hannum', 'DirVsAvgHannum'),
+]
+OUTPUT_PWD = '/Users/saschastocker/Documents/Stanford/DanEnnis20242025/WholeHeartCropISMRM/Data/SmartHealth'
+datasetname = 'Dataset312_HannumSmartHealthandDirVsAvgsCrop'   # crop is DWI-only (1 channel) -> no CONTRASTS; identical data to Dataset302
+output_mask_folder = f'{OUTPUT_PWD}/{datasetname}/labelsTr'
+output_image_folder = f'{OUTPUT_PWD}/{datasetname}/imagesTr'
+inspection_folder = f'{OUTPUT_PWD}/inspection{datasetname}'
 
 # Ensure output folders existw
 os.makedirs(output_mask_folder, exist_ok=True)
@@ -57,7 +63,7 @@ def save_inspection_plots(image_data, mask_data, filename_base):
     print(f'Saved inspection plot: {output_file}')
 
 
-for root_folder in root_folders:
+for pwd, root_folder, case_prefix in COHORTS:
     print(f'root folder: {root_folder}')
     root_path = os.path.join(pwd, root_folder)
 
@@ -117,7 +123,7 @@ for root_folder in root_folders:
                                     image_data = image_img.get_fdata()
                                     image_data = normalize_image(image_data)
 
-                                    common_name_id = f'{root_folder}_{volunteer_folder}_{divo_folder}_slice_{i:03d}'
+                                    common_name_id = f'{case_prefix}_{volunteer_folder}_{divo_folder}_slice_{i:03d}'
 
                                     mask_output_filename = os.path.join(output_mask_folder,
                                                                         f'{common_name_id}.nii.gz') 

@@ -10,12 +10,19 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 # Root directory and subfolders
-pwd = '/Users/saschastocker/Documents/Stanford/DanEnnis20242025/Paper2025Automatic/Smart_Health'
-root_folders = ['Hannum']
-datasetname = 'Dataset105_HannumSmartHealthDataIPs'
-output_mask_folder = f'{pwd}/{datasetname}/labelsTr'
-output_image_folder = f'{pwd}/{datasetname}/imagesTr'
-inspection_folder = f'{pwd}/inspection{datasetname}'
+# ---- cohorts to POOL: (un)comment lines to pick SmartHealth / DirVsAverages / both ----
+COHORTS = [
+    # (data path, folder-root, case-prefix). Both cohorts now live under 'Hannum', so the PREFIX
+    # (not the folder name) keeps case ids distinct and lets specific_split_combined detect DirVsAvg.
+    ('/Users/saschastocker/Documents/Stanford/DanEnnis20242025/WholeHeartCropISMRM/Data/SmartHealth', 'Hannum', 'Hannum'),
+    ('/Users/saschastocker/Documents/Stanford/DanEnnis20242025/WholeHeartCropISMRM/Data/DirVsAvg',    'Hannum', 'DirVsAvgHannum'),
+]
+OUTPUT_PWD = '/Users/saschastocker/Documents/Stanford/DanEnnis20242025/WholeHeartCropISMRM/Data/SmartHealth'
+CONTRASTS = [0, 1]   # avg+MD MVP  (use [0, 1, 2, 3] for the full 4-contrast set)
+datasetname = 'Dataset311_HannumSmartHealthandDirVsAvgsIPsMDandAvg'
+output_mask_folder = f'{OUTPUT_PWD}/{datasetname}/labelsTr'
+output_image_folder = f'{OUTPUT_PWD}/{datasetname}/imagesTr'
+inspection_folder = f'{OUTPUT_PWD}/inspection{datasetname}'
 
 # Ensure output folders exist
 os.makedirs(output_mask_folder, exist_ok=True)
@@ -102,7 +109,7 @@ def save_inspection_plots(image_data, mask_data, filename_base):
     plt.close(fig)
     print(f'Saved inspection plot: {output_file}')
 
-for root_folder in root_folders:
+for pwd, root_folder, case_prefix in COHORTS:
     print(f'root folder: {root_folder}')
     root_path = os.path.join(pwd, root_folder)
 
@@ -195,22 +202,17 @@ for root_folder in root_folders:
                                     combined_image_data = np.stack([avg_image_data, mean_diff_data, combined_eigenvector_data], axis=-1)
 
                                     # Save each channel separately (modality files with 0000, 0001, 0002 suffixes)
-                                    common_name_id = f'{root_folder}_{volunteer_folder}_{divo_folder}_slice_{i:03d}'
+                                    common_name_id = f'{case_prefix}_{volunteer_folder}_{divo_folder}_slice_{i:03d}'
 
-                                    # Save Average Diffusion Image as _0000
-                                    nib.save(nib.Nifti1Image(avg_image_data, avg_img.affine), 
-                                            os.path.join(output_image_folder, f'{common_name_id}_0000.nii.gz'))
-
-                                    # Save Mean Diffusivity Image as _0001
-                                    nib.save(nib.Nifti1Image(mean_diff_data, mean_diff_img.affine), 
-                                            os.path.join(output_image_folder, f'{common_name_id}_0001.nii.gz'))
-
-                                    # Save Eigenvector Image (use one channel for now) as _0002
-                                    nib.save(nib.Nifti1Image(combined_eigenvector_data, eigenvector_img.affine), 
-                                            os.path.join(output_image_folder, f'{common_name_id}_0002.nii.gz'))
-                                    
-                                    nib.save(nib.Nifti1Image(FA_image_data, FA_image.affine), 
-                                            os.path.join(output_image_folder, f'{common_name_id}_0003.nii.gz'))
+                                    # Save ONLY the selected contrasts (0=avg, 1=MD, 2=E1, 3=FA)
+                                    _channels = {0: (avg_image_data, avg_img.affine),
+                                                 1: (mean_diff_data, mean_diff_img.affine),
+                                                 2: (combined_eigenvector_data, eigenvector_img.affine),
+                                                 3: (FA_image_data, FA_image.affine)}
+                                    for _ch in CONTRASTS:
+                                        _arr, _aff = _channels[_ch]
+                                        nib.save(nib.Nifti1Image(_arr, _aff),
+                                                os.path.join(output_image_folder, f'{common_name_id}_{_ch:04d}.nii.gz'))
                                     
                                 
 
