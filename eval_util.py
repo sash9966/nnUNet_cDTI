@@ -615,15 +615,16 @@ def upscale_segmentation_to_original(segmentation, crop_mask_path, target_size=2
 
 
 
-def process_folders(pred_folder, gt_folder, main_folder, metrics_data, metrics_entry_median, interreaderName,annotator,mask_inference_folder):
+def process_folders(pred_folder, gt_folder, main_folder, metrics_data, metrics_entry_median, interreaderName,annotator,mask_inference_folder, voxel_spacing_mm=1.25):
     metrics_data= metrics_data
     metrics_entry_median= metrics_entry_median
 
 
     for pred_file in os.listdir(pred_folder):
-        if pred_file.endswith('.nii.gz'):
-            pred_path = os.path.join(pred_folder, pred_file)
-            gt_path = os.path.join(gt_folder, pred_file)
+        if not pred_file.endswith('.nii.gz'):
+            continue   # skip nnUNet json sidecars (dataset.json/plans.json/predict_*.json)
+        pred_path = os.path.join(pred_folder, pred_file)
+        gt_path = os.path.join(gt_folder, pred_file)
         if (interreaderName is not None):
             parts = pred_file.split('_')
             temp = pred_file
@@ -755,10 +756,10 @@ def process_folders(pred_folder, gt_folder, main_folder, metrics_data, metrics_e
                     gt_median_DWI = pred_median_DWI = median_percentage_difference_DWI = float('nan')
 
                 #Readjust to 1.25mm for right [mm]!
-                hausdorff_distance_label2=1.25*hausdorff_distance_label2
-                hausdorff_distance_label3=1.25*hausdorff_distance_label3
-                avg_hausdorff_epi=1.25*avg_hausdorff_epi
-                avg_hausdorff_endo=1.25*avg_hausdorff_endo
+                hausdorff_distance_label2=voxel_spacing_mm*hausdorff_distance_label2
+                hausdorff_distance_label3=voxel_spacing_mm*hausdorff_distance_label3
+                avg_hausdorff_epi=voxel_spacing_mm*avg_hausdorff_epi
+                avg_hausdorff_endo=voxel_spacing_mm*avg_hausdorff_endo
                 metric_entry_median= {
                                         
                 }
