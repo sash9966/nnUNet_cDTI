@@ -114,3 +114,7 @@ ENV/
 *.model
 
 !documentation/assets/scribble_example.png
+
+# deployment (deployable.py): keep its requirements, ignore downloaded weights
+!requirements.txt
+deployable_weights/

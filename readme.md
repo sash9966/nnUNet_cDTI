@@ -1,3 +1,155 @@
+# Automatic LV segmentation for cardiac DTI (cDTI)
+
+One command: give it the **average DWI** and **mean diffusivity (MD)** map of each slice, get back the
+**LV myocardium mask + RV insertion points in the original image space**, ready for CarDpy
+(MD / FA / helix angle).
+
+```
+DWI ─► YOLO heart crop ─► square crop + resize 256 ─► nnUNet LV (5-fold ensemble) ─► YOLO insertion points ─► un-crop ─► mask
+```
+
+---
+
+## 1. Install (once)
+
+Python 3.10–3.12. A CUDA GPU is recommended; CPU works (slower).
+
+```bash
+git clone https://github.com/sash9966/nnUNet_cDTI.git
+cd nnUNet_cDTI/deploy          # everything you need is in deploy/ -- run all commands from here
+python -m venv .venv && source .venv/bin/activate      # optional but recommended
+pip install -r requirements.txt
+```
+
+> GPU: if `python -c "import torch; print(torch.cuda.is_available())"` prints `False` on a GPU machine,
+> install the CUDA build of PyTorch first (see pytorch.org), then rerun `pip install -r requirements.txt`.
+
+## 2. Get the weights (once)
+
+The weights (~4 GB) are on Hugging Face: **`sash99666/cdti-lv-baseline`** (private — ask for access).
+Because the repo is private you log in once, whichever way you download:
+
+1. Make a Hugging Face account and send the username to the authors to be added.
+2. Create a **read** token at huggingface.co/settings/tokens, then in a terminal: `hf auth login`
+
+Then pick one:
+
+- **A — automatic:** do nothing. The first run downloads the weights into `deploy/deployable_weights/`.
+- **B — your own folder** (shared drive, offline machine, …):
+  ```bash
+  hf download sash99666/cdti-lv-baseline --local-dir /path/to/cdti_weights
+  ```
+  and add `--weights /path/to/cdti_weights` when you run. Keep the folder layout as downloaded.
+
+## 3. Prepare your input
+
+One 2-D NIfTI per slice and contrast, all in one folder:
+
+```
+input/
+  Patient01_slice01_0000.nii.gz    # average DWI           (required)
+  Patient01_slice01_0001.nii.gz    # mean diffusivity (MD) (required)
+  Patient01_slice02_0000.nii.gz
+  Patient01_slice02_0001.nii.gz
+  ...
+```
+
+Rules:
+- `_0000` = average DWI, `_0001` = MD. Same base name for both files of a slice.
+- Give the maps **as reconstructed — do not normalize them**; the pipeline normalizes
+  (DWI min–max, MD ÷ 4) exactly as in training.
+- MD in **µm²/ms** (= 10⁻³ mm²/s; myocardium ≈ 1.5–1.7).
+- DWI and MD of a slice must have the same shape (same image grid).
+
+From CarDpy / numpy arrays:
+
+```python
+import os, nibabel as nib, numpy as np
+os.makedirs('input', exist_ok=True)
+for s in range(dwi.shape[2]):                    # dwi, md: (H, W, slices)
+    for ch, img in ((0, dwi), (1, md)):
+        nib.save(nib.Nifti1Image(img[:, :, s].astype(np.float32), np.eye(4)),
+                 f'input/Patient01_slice{s+1:02d}_{ch:04d}.nii.gz')
+```
+
+## 4. Run
+
+```bash
+python deployable.py --input input --output output                                  # option A
+python deployable.py --input input --output output --weights /path/to/cdti_weights  # option B
+```
+
+or from Python / a notebook (start Python or Jupyter **inside `deploy/`** — from the repository root,
+Python would import this repo's own `nnunetv2/` folder instead of the installed package):
+
+```python
+from deployable import CardiacPipeline
+CardiacPipeline(weights_dir='/path/to/cdti_weights').predict_folder('input', 'output')
+```
+
+## 5. Output
+
+Two files per slice, same size and grid as your input DWI:
+
+| file | contents |
+|---|---|
+| `output/<case>_lv.nii.gz` | **LV myocardium only** (0/1) — use this for MD / FA / helix angle |
+| `output/<case>.nii.gz` | 1 = LV myocardium, 2 = anterior and 3 = inferior RV insertion point |
+
+In `<case>.nii.gz` the insertion points are small disks painted over the myocardium, so its label 1 has
+small holes there — that's why the separate `_lv` mask exists.
+Intermediate files (crop box, 256 crops, raw LV) are kept in `output/_work/`.
+
+---
+
+## How the model was built
+
+| | |
+|---|---|
+| Data | Stanford cDTI, manually annotated (Hannum): SmartHealth + Directions-vs-Averages cohorts, protocol DiVO_15_04 |
+| Test set | 39 slices from 6 volunteers (46, 47, 49, 50, 51, 52), excluded from every training fold |
+| Crop model | YOLO box detector on the average DWI (`yolo/crop.pt`) |
+| LV model | nnUNet v2, 2-D, ResEnc-M plans, 5-fold ensemble, 100 epochs, DA5 augmentation, inputs DWI + MD (`noNorm`; normalization done in preprocessing) |
+| Insertion-point model | single-class YOLO on the average DWI, top-2 points (`yolo/rvip.pt`) |
+
+### Results on the held-out test set (mean over 39 slices)
+
+| training data / inputs | LV Dice | precision | recall |
+|---|---|---|---|
+| SmartHealth only, 4 contrasts (DWI, MD, eigenvector, FA) | 0.902 | 0.889 | 0.923 |
+| SmartHealth + Dir-vs-Avg, 4 contrasts | 0.909 | 0.877 | 0.936 |
+| **SmartHealth + Dir-vs-Avg, DWI + MD — this model** | **0.909** | 0.889 | 0.932 |
+
+More data helped a little; dropping to DWI + MD cost nothing, so the shipped model needs only those two maps.
+MD / FA / DWI inside the predicted mask agree with the manual mask to ~1% / ~2% / ~3% (median).
+Insertion-point error: median ~2.3 mm, but a few slices miss by 30–55 mm.
+
+Training and evaluation code (ongoing development): branch `crop-alignment-and-hap-fixes`
+(`PaperRun_cDTI_Pipeline.ipynb`, `MODEL_CARD.md`).
+
+## Limitations
+
+- Single center and protocol; other scanners/protocols are not validated — check the masks.
+- Requires reconstructed DWI and MD maps (no tensor fitting here).
+- Treat insertion points as an initialization and review them.
+- Helix-angle agreement on predicted masks has not been validated yet.
+
+## Files
+
+| file | what |
+|---|---|
+| `deploy/deployable.py` | the whole pipeline (config at the top, CLI at the bottom) |
+| `deploy/yolo_pipeline.py` | YOLO crop / insertion-point helpers |
+| `deploy/requirements.txt` | dependencies (installs the standard `nnunetv2` from PyPI — no need to install this repo) |
+
+Everything outside `deploy/` is our nnU-Net fork and research code used to train and evaluate the model.
+
+---
+
+# Based on nnU-Net
+
+This repository is a fork of nnU-Net (MIC-DKFZ). Original documentation below.
+
 # Welcome to the new nnU-Net!
 
 Click [here](https://github.com/MIC-DKFZ/nnUNet/tree/nnunetv1) if you were looking for the old one instead.
