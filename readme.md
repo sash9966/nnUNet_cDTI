@@ -112,17 +112,30 @@ Intermediate files (crop box, 256 crops, raw LV) are kept in `output/_work/`.
 | LV model | nnUNet v2, 2-D, ResEnc-M plans, 5-fold ensemble, 100 epochs, DA5 augmentation, inputs DWI + MD (`noNorm`; normalization done in preprocessing) |
 | Insertion-point model | single-class YOLO on the average DWI, top-2 points (`yolo/rvip.pt`) |
 
-### Results on the held-out test set (mean over 39 slices)
+### Results on the held-out test set (39 slices, 6 volunteers, never used in training)
 
-| training data / inputs | LV Dice | precision | recall |
-|---|---|---|---|
-| SmartHealth only, 4 contrasts (DWI, MD, eigenvector, FA) | 0.902 | 0.889 | 0.923 |
-| SmartHealth + Dir-vs-Avg, 4 contrasts | 0.909 | 0.877 | 0.936 |
-| **SmartHealth + Dir-vs-Avg, DWI + MD — this model** | **0.909** | 0.889 | 0.932 |
+| training data / inputs | LV Dice | precision | recall | helix angle pitch, automatic − manual (median abs.) |
+|---|---|---|---|---|
+| SmartHealth only, 4 contrasts (DWI, MD, eigenvector, FA) | 0.902 | 0.884 | 0.923 | 3.9 °/wall |
+| SmartHealth + Dir-vs-Avg, 4 contrasts | 0.909 | 0.886 | 0.936 | 3.7 °/wall |
+| **SmartHealth + Dir-vs-Avg, DWI + MD — this model** | **0.909** | 0.889 | 0.932 | 4.2 °/wall |
 
 More data helped a little; dropping to DWI + MD cost nothing, so the shipped model needs only those two maps.
 MD / FA / DWI inside the predicted mask agree with the manual mask to ~1% / ~2% / ~3% (median).
+Helix angle (CarDpy, computed from the raw diffusion data inside each mask): pitch −61.0 °/wall with the
+manual mask vs −61.7 with this model (mean; bias −0.6, r = 0.87 per slice).
 Insertion-point error: median ~2.3 mm, but a few slices miss by 30–55 mm.
+
+| | |
+|---|---|
+| ![LV Dice](results/dice_violin.png) | ![Helix angle pitch](results/gtpred_HAP.png) |
+| ![MD](results/gtpred_MD.png) | ![FA](results/gtpred_FA.png) |
+| ![DWI](results/gtpred_DWI.png) | |
+
+![Insertion points](results/ip_hausdorff_violin.png)
+
+Split violins: grey = value inside the manual mask, colour = inside the automatic mask; lines pair the same slice.
+All numbers (mean / median / std per run): [`results/summary.csv`](results/summary.csv).
 
 Training and evaluation code (ongoing development): branch `crop-alignment-and-hap-fixes`
 (`PaperRun_cDTI_Pipeline.ipynb`, `MODEL_CARD.md`).
@@ -132,7 +145,6 @@ Training and evaluation code (ongoing development): branch `crop-alignment-and-h
 - Single center and protocol; other scanners/protocols are not validated — check the masks.
 - Requires reconstructed DWI and MD maps (no tensor fitting here).
 - Treat insertion points as an initialization and review them.
-- Helix-angle agreement on predicted masks has not been validated yet.
 
 ## Files
 
@@ -141,6 +153,7 @@ Training and evaluation code (ongoing development): branch `crop-alignment-and-h
 | `deploy/deployable.py` | the whole pipeline (config at the top, CLI at the bottom) |
 | `deploy/yolo_pipeline.py` | YOLO crop / insertion-point helpers |
 | `deploy/requirements.txt` | dependencies (installs the standard `nnunetv2` from PyPI — no need to install this repo) |
+| `results/` | evaluation plots + summary numbers shown above (no images or data) |
 
 Everything outside `deploy/` is our nnU-Net fork and research code used to train and evaluate the model.
 

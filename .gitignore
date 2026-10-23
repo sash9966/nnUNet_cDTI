@@ -118,3 +118,4 @@ ENV/
 # deployment (deployable.py): keep its requirements, ignore downloaded weights
 !requirements.txt
 deployable_weights/
+!results/*.png
