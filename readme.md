@@ -142,7 +142,7 @@ Insertion-point error: median ~2.3 mm, but a few slices miss by 30–55 mm.
 
 ![Insertion points](results/ip_hausdorff_violin.png)
 
-Split violins: grey = value inside the manual mask, colour = inside the automatic mask; lines pair the same slice.
+Split violins: left half = value inside the manual mask, right half = inside the automatic mask; lines pair the same slice.
 All numbers (mean / median / std per run): [`results/summary.csv`](results/summary.csv).
 
 Training and evaluation code (ongoing development): branch `crop-alignment-and-hap-fixes`
