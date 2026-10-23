@@ -118,7 +118,6 @@ def ip_hausdorff_violin(alldf, order, out_dir):
 def gt_pred_violins(alldf, order, out_dir):
     """MD / FA / DWI GT-vs-Prediction split violins, exact median_boxplot.ipynb styling."""
     import seaborn as sns
-    from matplotlib.lines import Line2D
     paths = []
     pairs = []
     for c in alldf.columns:
@@ -158,10 +157,11 @@ def gt_pred_violins(alldf, order, out_dir):
                 plt.plot([idx - 0.1, idx + 0.1], [g, prd], color='black', alpha=0.3)
         plt.xticks(fontsize=10)
         plt.ylabel(METRIC_LABELS.get(metric, metric), fontsize=12); plt.xlabel('')
-        plt.legend(handles=[Line2D([0], [0], color='grey', lw=6, label='manual (GT)'),
-                            Line2D([0], [0], color=pred_colors[approaches[0]], lw=6, label='automatic')],
-                   fontsize=9, loc='upper center', bbox_to_anchor=(0.5, -0.17), ncol=2, frameon=False)
-        plt.tight_layout(); p = os.path.join(out_dir, f'gtpred_{metric}.png')
+        if plt.gca().get_legend():
+            plt.gca().get_legend().remove()
+        plt.figtext(0.5, 0.01, 'left half: manual segmentation (GT)   ·   right half: automatic segmentation',
+                    ha='center', va='bottom', fontsize=10)
+        plt.tight_layout(rect=(0, 0.05, 1, 1)); p = os.path.join(out_dir, f'gtpred_{metric}.png')
         plt.savefig(p, dpi=300); plt.show(); paths.append(p)
     return paths
 
