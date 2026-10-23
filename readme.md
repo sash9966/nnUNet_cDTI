@@ -152,7 +152,9 @@ Training and evaluation code (ongoing development): branch `crop-alignment-and-h
 
 - Single center and protocol; other scanners/protocols are not validated — check the masks.
 - Requires reconstructed DWI and MD maps (no tensor fitting here).
-- Treat insertion points as an initialization and review them.
+- Treat insertion points as an initialization and review them. A few slices miss by 30–55 mm (median error
+  ~2.3 mm): these are slices where the insertion points are not clearly visible in the DWI (e.g. the RV wall
+  appears disconnected), so their position is ambiguous even for a human reader.
 - Distances in mm assume 1.25 mm pixels (see open question 1).
 
 ## Open questions (for co-author review)
@@ -165,20 +167,9 @@ Training and evaluation code (ongoing development): branch `crop-alignment-and-h
    be read per case. Only mm values depend on this — Dice, MD / FA / DWI and helix angle do not (helix pitch
    uses the normalized wall depth). The test set is SmartHealth only, so one value is enough there if 1.25 mm
    is right.
-2. **Earlier helix-angle results.** The previous ground-truth helix table (`hap_results.csv`, pitch −15 to
-   +14 °/wall) was computed with a mask that did not line up with the diffusion data (cropped-space mask, read
-   transposed). Recomputed with the native full-size manual masks, pitch is −61 °/wall (mean). The old table
-   should not be used.
-3. **Helix range vs pitch.** With the wall depth normalized from 0 (endo) to 1 (epi), the helix-angle range
+2. **Helix range vs pitch.** With the wall depth normalized from 0 (endo) to 1 (epi), the helix-angle range
    (endo − epi of the fitted line) equals minus the pitch, so it adds no information. Report pitch only, or
    define the range differently (e.g. from endo / epi HA medians)?
-4. **Model comparison wording.** Helix-pitch errors of the three models are not significantly different
-   (paired Wilcoxon on |error|, p = 0.34–0.75; median 3.7–4.2 °/wall); Dice differs by 0.007. The current
-   reading is "more data helps slightly, DWI + MD is enough", not that one model is clearly better.
-5. **Insertion-point outliers.** Median error ~2.3 mm, but 2–3 slices miss by 30–55 mm. Improve the detector,
-   or flag low-confidence detections for manual review?
-6. **External validation.** All test data are from one center and protocol (Siemens Vida fit 3 T, DiVO_15_04).
-   Which external dataset should be used to check generalization?
 
 ## Files
 
