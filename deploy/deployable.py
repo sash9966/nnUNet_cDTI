@@ -261,19 +261,17 @@ class CardiacPipeline:
                 print(f'  no LV output for {case}'); continue
             lv = nib.load(lv_p).get_fdata().astype(np.int32)
             ip = self._detect_ips(case, s256_dir)
-            combined = lv.copy(); combined[lv == 1] = 1
-            combined[ip == 2] = 2; combined[ip == 3] = 3     # insertion points
+            # one channel per structure, same layout as the manual masks (H, W, 3):
+            # 0 = LV myocardium, 1 = anterior IP, 2 = inferior IP -> an IP on the LV keeps BOTH labels
+            layers = [(lv == 1), (ip == 2), (ip == 3)]
 
             crop_mask_p = os.path.join(crop_dir, f'{case}.nii.gz')
-            full = upscale_segmentation_to_original(combined, crop_mask_p, target_size=TARGET_SIZE)
+            full = np.stack([upscale_segmentation_to_original(l.astype(np.uint8), crop_mask_p, target_size=TARGET_SIZE)
+                             for l in layers], axis=-1)
             ref  = nib.load(os.path.join(in_dir, f'{case}_0000.nii.gz'))
-            nib.save(nib.Nifti1Image(full.astype(np.uint8), ref.affine, ref.header),
+            nib.save(nib.Nifti1Image(full.astype(np.uint8), ref.affine),
                      os.path.join(out_dir, f'{case}.nii.gz'))
-            # pure LV (label 1 only, NOT eroded by the insertion points) -> use this for MD/FA/helix
-            lv_full = upscale_segmentation_to_original((lv == 1).astype(np.uint8), crop_mask_p, target_size=TARGET_SIZE)
-            nib.save(nib.Nifti1Image(lv_full.astype(np.uint8), ref.affine, ref.header),
-                     os.path.join(out_dir, f'{case}_lv.nii.gz'))
-            print(f'  wrote {case}.nii.gz + {case}_lv.nii.gz  (original spacing)')
+            print(f'  wrote {case}.nii.gz  (H x W x 3: LV / anterior IP / inferior IP, original image grid)')
         print('done ->', out_dir)
 
 

@@ -89,15 +89,23 @@ CardiacPipeline(weights_dir='/path/to/cdti_weights').predict_folder('input', 'ou
 
 ## 5. Output
 
-Two files per slice, same size and grid as your input DWI:
+One file per slice, `output/<case>.nii.gz`, on the same image grid as your input DWI, with **one layer per
+structure** (same layout as the manual annotations):
 
-| file | contents |
+| layer | contents |
 |---|---|
-| `output/<case>_lv.nii.gz` | **LV myocardium only** (0/1) — use this for MD / FA / helix angle |
-| `output/<case>.nii.gz` | 1 = LV myocardium, 2 = anterior and 3 = inferior RV insertion point |
+| `[:, :, 0]` | LV myocardium (0/1) — use this for MD / FA / helix angle |
+| `[:, :, 1]` | anterior RV insertion point (small disk, 0/1) |
+| `[:, :, 2]` | inferior RV insertion point (small disk, 0/1) |
 
-In `<case>.nii.gz` the insertion points are small disks painted over the myocardium, so its label 1 has
-small holes there — that's why the separate `_lv` mask exists.
+The layers are independent, so where an insertion point lies on the myocardium that pixel is in **both**
+the LV layer and the insertion-point layer — nothing is cut out of the LV mask.
+
+```python
+mask = nib.load('output/Patient01_slice01.nii.gz').get_fdata()
+lv, ip_anterior, ip_inferior = mask[..., 0] > 0, mask[..., 1] > 0, mask[..., 2] > 0
+```
+
 Intermediate files (crop box, 256 crops, raw LV) are kept in `output/_work/`.
 
 ---
@@ -145,6 +153,32 @@ Training and evaluation code (ongoing development): branch `crop-alignment-and-h
 - Single center and protocol; other scanners/protocols are not validated — check the masks.
 - Requires reconstructed DWI and MD maps (no tensor fitting here).
 - Treat insertion points as an initialization and review them.
+- Distances in mm assume 1.25 mm pixels (see open question 1).
+
+## Open questions (for co-author review)
+
+1. **Pixel spacing.** Distances (insertion-point error, epi/endo contour distance) convert pixels to mm with a
+   fixed 1.25 mm/pixel. The spacing cannot be read from the data we have: the NIfTI headers contain a
+   placeholder 1 × 1 mm, and the scanner `.header` files have no resolution field (CarDpy reads it from the
+   DICOMs, which are not in the exports). *Needed:* the in-plane pixel size of the 256 × 256 interpolated
+   images for each cohort (SmartHealth, Directions-vs-Averages), or access to the DICOMs, so the spacing can
+   be read per case. Only mm values depend on this — Dice, MD / FA / DWI and helix angle do not (helix pitch
+   uses the normalized wall depth). The test set is SmartHealth only, so one value is enough there if 1.25 mm
+   is right.
+2. **Earlier helix-angle results.** The previous ground-truth helix table (`hap_results.csv`, pitch −15 to
+   +14 °/wall) was computed with a mask that did not line up with the diffusion data (cropped-space mask, read
+   transposed). Recomputed with the native full-size manual masks, pitch is −61 °/wall (mean). The old table
+   should not be used.
+3. **Helix range vs pitch.** With the wall depth normalized from 0 (endo) to 1 (epi), the helix-angle range
+   (endo − epi of the fitted line) equals minus the pitch, so it adds no information. Report pitch only, or
+   define the range differently (e.g. from endo / epi HA medians)?
+4. **Model comparison wording.** Helix-pitch errors of the three models are not significantly different
+   (paired Wilcoxon on |error|, p = 0.34–0.75; median 3.7–4.2 °/wall); Dice differs by 0.007. The current
+   reading is "more data helps slightly, DWI + MD is enough", not that one model is clearly better.
+5. **Insertion-point outliers.** Median error ~2.3 mm, but 2–3 slices miss by 30–55 mm. Improve the detector,
+   or flag low-confidence detections for manual review?
+6. **External validation.** All test data are from one center and protocol (Siemens Vida fit 3 T, DiVO_15_04).
+   Which external dataset should be used to check generalization?
 
 ## Files
 
