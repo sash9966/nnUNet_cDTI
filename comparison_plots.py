@@ -8,7 +8,8 @@ per approach/model), and writes to out_dir:
                                numbers when the violins are too close to eyeball)
   - dice_violin.png          : LV Dice by approach
   - ip_hausdorff_violin.png  : insertion-point Hausdorff (misses reported separately)
-  - gtpred_<METRIC>.png      : MD / FA / DWI GT-vs-Prediction split violins (median_boxplot.ipynb style)
+  - gtpred_<METRIC>.png      : MD / FA / DWI (+ helix HAP / HAR if present) GT-vs-Prediction split violins
+                               (median_boxplot.ipynb style)
 
 Used by CompareApproaches.ipynb and by SmartHealthTestingHannum.ipynb's final section.
 """
@@ -26,7 +27,14 @@ METRIC_LABELS = {
     'MD':  'Mean Diffusivity [$\\mu m^2 / ms$]',
     'FA':  'Fractional Anisotropy',
     'DWI': 'DWI signal [a.u.]',
+    'HAP': 'Helix angle pitch [deg / wall]',
+    'HAR': 'Helix angle range [deg]',
 }
+METRIC_TITLES = {'HAP': 'Helix angle pitch', 'HAR': 'Helix angle range'}
+
+
+def _fig_width(n):
+    return max(5.5, 2.6 * n + 1.5)   # wide enough for the title + two-line run labels
 
 
 def load_runs(runs):
@@ -57,8 +65,8 @@ def _violin(ax, groups, labels, ylabel, title, ylim=None):
     for i, v in enumerate(vals):
         if len(v):
             ax.scatter(np.random.normal(i + 1, 0.05, len(v)), v, s=12, alpha=0.5, color='k', zorder=3)
-            ax.text(i + 1, np.median(v), f'{np.median(v):.3f}', ha='center', va='bottom', fontsize=9)
-    ax.set_xticks(range(1, len(labels) + 1)); ax.set_xticklabels(labels, rotation=20, ha='right')
+            ax.text(i + 1.3, np.median(v), f'median\n{np.median(v):.2f}', ha='left', va='center', fontsize=9)
+    ax.set_xticks(range(1, len(labels) + 1)); ax.set_xticklabels(labels, fontsize=9)
     ax.set_ylabel(ylabel); ax.set_title(title); ax.grid(axis='y', alpha=0.3)
     if ylim:
         ax.set_ylim(*ylim)
@@ -73,8 +81,8 @@ def dice_violin(alldf, order, out_dir):
     approaches = [a for a in order if a in set(d['approach'].astype(str))]
     colors = {a: plt.cm.tab10(i % 10) for i, a in enumerate(approaches)}
 
-    plt.figure(figsize=(2.2 * len(approaches) + 2, 4.5), dpi=300)
-    plt.title('LV Dice — automatic vs GT', fontsize=16)
+    plt.figure(figsize=(_fig_width(len(approaches)), 4.8), dpi=300)
+    plt.title('LV Dice — automatic vs manual', fontsize=15)
     sns.violinplot(x='approach', y=DICE, data=d, order=approaches, inner='quartile',
                    palette=colors, cut=0, width=0.6)
     for patch in plt.gca().collections:
@@ -83,16 +91,17 @@ def dice_violin(alldf, order, out_dir):
         vals = d[d['approach'] == a][DICE].values
         plt.scatter(np.full(len(vals), idx) + np.random.uniform(-0.08, 0.08, len(vals)), vals,
                     color='black', s=12, alpha=0.6, zorder=3)
-        plt.text(idx, np.median(vals) + 0.015, f'{np.median(vals):.3f}', ha='center', va='bottom', fontsize=10)
-    plt.ylim(0, 1); plt.ylabel('Dice (LV, label 1)', fontsize=13); plt.xlabel('')
-    plt.xticks(fontsize=12, rotation=15, ha='right'); plt.grid(axis='y', alpha=0.3)
+        plt.text(idx + 0.33, np.median(vals), f'median\n{np.median(vals):.3f}', ha='left', va='center', fontsize=9)
+    plt.ylim(0.6, 1); plt.xlim(-0.6, len(approaches) - 0.1)
+    plt.ylabel('Dice (LV myocardium)', fontsize=13); plt.xlabel('')
+    plt.xticks(fontsize=10); plt.grid(axis='y', alpha=0.3)
     plt.tight_layout(); p = os.path.join(out_dir, 'dice_violin.png')
     plt.savefig(p, dpi=300); plt.show()
     return p
 
 
 def ip_hausdorff_violin(alldf, order, out_dir):
-    fig, axes = plt.subplots(1, 2, figsize=(1.8 * len(order) + 4, 5))
+    fig, axes = plt.subplots(1, 2, figsize=(2 * _fig_width(len(order)), 5))
     for ax, hd, name in zip(axes, [HD2, HD3], ['anterior (label 2)', 'inferior (label 3)']):
         if hd not in alldf.columns:
             ax.set_visible(False); continue
@@ -101,7 +110,7 @@ def ip_hausdorff_violin(alldf, order, out_dir):
             v = alldf[alldf.approach == a][hd].values
             print(f'  {a} | IP {name}: {(v >= HD_MISS).mean() * 100:.0f}% missed')
             groups.append(v[v < HD_MISS])          # detected points only
-        _violin(ax, groups, order, 'Hausdorff [mm]', f'IP {name} (detected only)')
+        _violin(ax, groups, order, 'distance to manual point [mm]', f'Insertion point, {name}')
     plt.tight_layout(); p = os.path.join(out_dir, 'ip_hausdorff_violin.png'); plt.savefig(p, dpi=200); plt.show()
     return p
 
@@ -113,18 +122,23 @@ def gt_pred_violins(alldf, order, out_dir):
     paths = []
     pairs = []
     for c in alldf.columns:
-        m = re.match(r'GT_Median_(\w+)$', c)
-        if m and f'Pred_median_{m.group(1)}' in alldf.columns:
-            pairs.append((m.group(1), c, f'Pred_median_{m.group(1)}'))
+        m = re.match(r'GT_(?:Median_)?(\w+)$', c)          # GT_Median_MD / GT_HAP
+        if not m:
+            continue
+        pr = next((p for p in (f'Pred_median_{m.group(1)}', f'Pred_{m.group(1)}') if p in alldf.columns), None)
+        if pr and alldf[c].notna().any():
+            pairs.append((m.group(1), c, pr))
     for metric, gt_col, pr_col in pairs:
         melted = alldf[[CASE, 'approach', gt_col, pr_col]].melt(
             id_vars=[CASE, 'approach'], value_vars=[gt_col, pr_col], var_name='Type', value_name='Median')
         melted['Type'] = melted['Type'].replace({gt_col: 'GT', pr_col: 'Pred'})
+        melted = melted.dropna(subset=['Median'])           # e.g. a run without helix results yet
         approaches = [a for a in order if a in set(melted['approach'].astype(str))]
+        melted['approach'] = pd.Categorical(melted['approach'].astype(str), categories=approaches, ordered=True)
         pred_colors = {a: plt.cm.tab10(i % 10) for i, a in enumerate(approaches)}
 
-        plt.figure(figsize=(2.4 * len(approaches) + 2, 4), dpi=300)
-        plt.title(f'{metric} — GT vs Prediction', fontsize=16)
+        plt.figure(figsize=(_fig_width(len(approaches)), 4.8), dpi=300)
+        plt.title(f'{METRIC_TITLES.get(metric, metric)} — manual vs automatic mask', fontsize=14)
         sns.violinplot(x='approach', y='Median', hue='Type', data=melted, split=True,
                        inner='quartile', palette={'GT': 'grey', 'Pred': 'black'},
                        cut=0, width=0.5, order=approaches)
@@ -142,9 +156,11 @@ def gt_pred_violins(alldf, order, out_dir):
                         color='black', s=10, alpha=0.7)
             for g, prd in zip(gt, pr):
                 plt.plot([idx - 0.1, idx + 0.1], [g, prd], color='black', alpha=0.3)
-        plt.xticks(fontsize=12, rotation=15, ha='right')
-        plt.ylabel(METRIC_LABELS.get(metric, metric), fontsize=13); plt.xlabel('')
-        plt.legend(handles=[Line2D([0], [0], color='grey', lw=6, label='GT')], fontsize=11)
+        plt.xticks(fontsize=10)
+        plt.ylabel(METRIC_LABELS.get(metric, metric), fontsize=12); plt.xlabel('')
+        plt.legend(handles=[Line2D([0], [0], color='grey', lw=6, label='manual (GT)'),
+                            Line2D([0], [0], color=pred_colors[approaches[0]], lw=6, label='automatic')],
+                   fontsize=9, loc='upper center', bbox_to_anchor=(0.5, -0.17), ncol=2, frameon=False)
         plt.tight_layout(); p = os.path.join(out_dir, f'gtpred_{metric}.png')
         plt.savefig(p, dpi=300); plt.show(); paths.append(p)
     return paths
@@ -158,7 +174,8 @@ def full_report(runs, out_dir):
 
     metrics = [c for c in [DICE, 'F1 Label 1', 'Precision', 'Recall', HD2, HD3,
                            'GT_Median_MD', 'Pred_median_MD', 'GT_Median_FA', 'Pred_median_FA',
-                           'GT_Median_DWI', 'Pred_median_DWI', 'Avg. HD Epi', 'Avg. HD Endo']
+                           'GT_Median_DWI', 'Pred_median_DWI', 'Avg. HD Epi', 'Avg. HD Endo',
+                           'GT_HAP', 'Pred_HAP', 'GT_HAR', 'Pred_HAR']
                if c in alldf.columns]
     summary = alldf.groupby('approach', observed=True)[metrics].agg(['mean', 'median', 'std'])
     summary.to_csv(os.path.join(out_dir, 'comparison_summary.csv'))

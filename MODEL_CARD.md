@@ -4,8 +4,9 @@ A fully automated pipeline for **left-ventricular (LV) myocardium segmentation o
 tensor imaging (cDTI)**, plus right-ventricular **insertion-point (RVIP)** detection — designed to
 drop into CarDpy for downstream cDTI metrics (MD, FA, helix angle).
 
-> **Status:** this release is the **segmentation model** (LV + RVIP). Helix-angle validation on the
-> predicted masks (vs. manual) is analysis-only and will be added in a later update.
+> **Status:** segmentation model (LV + RVIP) released; helix angle on the predicted masks validated against
+> the manual masks (pitch −61.0 vs −61.7 °/wall, median per-slice difference 4.2 °/wall). Open questions for
+> co-author review are listed in the `master` README.
 
 Pipeline: **YOLO heart crop → resize 256 → nnUNet ResEnc-M LV segmentation (5-fold) → YOLO RVIP
 detection → un-crop to original FoV.**
@@ -118,7 +119,10 @@ Trainer: `nnUNetTrainerDA5_100epochsNoCompile` (DA5 augmentation, torch.compile 
   scanners/protocols is unvalidated.
 - Expects the average DWI + MD maps already reconstructed (the pipeline does not do tensor fitting).
 - Insertion-point detector is a weak single-class YOLO; use its points as an initialization.
-- Helix angle from the predicted masks has not been validated against manual masks yet (planned).
+- Distances in mm assume 1.25 mm pixels (`VOXEL_SPACING_MM`): the NIfTI exports only carry a placeholder
+  1 × 1 mm spacing, so the true per-cohort spacing still has to be confirmed.
+- Helix angle (`RUN_HELIX`) needs the raw `NifTis` (`Interpolated.nii/.bvals/.bvecs/.header`) per volunteer in
+  `RAW_DIFFUSION_ROOT`; GT helix uses the native full-size manual mask (`04_Segmentation_Masks`).
 
 ## Citation / contact
 Stocker et al., automated whole-heart cDTI segmentation (ISMRM).
